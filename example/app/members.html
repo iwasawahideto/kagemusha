@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Members - Acme Dashboard</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f7fa; color: #1a1a2e; }
+    nav { background: #1a1a2e; color: #fff; padding: 16px 32px; display: flex; align-items: center; justify-content: space-between; }
+    nav .logo { font-weight: 700; font-size: 20px; }
+    nav .nav-links { display: flex; gap: 24px; }
+    nav a { color: #a0a0c0; text-decoration: none; font-size: 14px; }
+    nav a.active { color: #fff; }
+    .container { max-width: 1024px; margin: 32px auto; padding: 0 24px; }
+    h1 { font-size: 24px; margin-bottom: 24px; }
+    .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .search { padding: 8px 16px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; width: 280px; }
+    .btn { padding: 8px 20px; border-radius: 8px; border: none; font-size: 14px; cursor: pointer; font-weight: 500; }
+    .btn-primary { background: #6366f1; color: #fff; }
+    table { width: 100%; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); border-collapse: collapse; }
+    th { text-align: left; padding: 14px 20px; font-size: 13px; color: #888; border-bottom: 1px solid #eee; font-weight: 500; }
+    td { padding: 14px 20px; font-size: 14px; border-bottom: 1px solid #f5f5f5; }
+    tr:last-child td { border-bottom: none; }
+    .status { padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 500; }
+    .status.active { background: #dcfce7; color: #166534; }
+    .status.inactive { background: #fef3c7; color: #92400e; }
+    .member-info { display: flex; align-items: center; gap: 12px; }
+    .member-avatar { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 12px; font-weight: 600; }
+    .user-menu { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+    .avatar { width: 28px; height: 28px; border-radius: 50%; background: #6366f1; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 12px; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <nav>
+    <span class="logo">Acme App</span>
+    <div class="nav-links">
+      <a href="index.html">Dashboard</a>
+      <a href="members.html" class="active">Members</a>
+      <a href="settings.html">Settings</a>
+    </div>
+    <div class="user-menu">
+      <div class="avatar">JD</div>
+      <span>John Doe</span>
+    </div>
+  </nav>
+
+  <div class="container">
+    <h1>Members</h1>
+
+    <div class="toolbar">
+      <input type="text" class="search" placeholder="Search members..." />
+      <button class="btn btn-primary" id="invite-btn">Invite Member</button>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Role</th>
+          <th>Team</th>
+          <th>Status</th>
+          <th>Last Active</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><div class="member-info"><div class="member-avatar" style="background:#6366f1">AS</div>Alice Smith</div></td>
+          <td>Admin</td>
+          <td>Engineering</td>
+          <td><span class="status active">Active</span></td>
+          <td>2 min ago</td>
+        </tr>
+        <tr>
+          <td><div class="member-info"><div class="member-avatar" style="background:#ec4899">BJ</div>Bob Johnson</div></td>
+          <td>Member</td>
+          <td>Design</td>
+          <td><span class="status active">Active</span></td>
+          <td>1 hour ago</td>
+        </tr>
+        <tr>
+          <td><div class="member-info"><div class="member-avatar" style="background:#f59e0b">CW</div>Carol Williams</div></td>
+          <td>Member</td>
+          <td>Marketing</td>
+          <td><span class="status active">Active</span></td>
+          <td>3 hours ago</td>
+        </tr>
+        <tr>
+          <td><div class="member-info"><div class="member-avatar" style="background:#10b981">DL</div>David Lee</div></td>
+          <td>Member</td>
+          <td>Engineering</td>
+          <td><span class="status inactive">Inactive</span></td>
+          <td>5 days ago</td>
+        </tr>
+        <tr>
+          <td><div class="member-info"><div class="member-avatar" style="background:#8b5cf6">EM</div>Eve Martinez</div></td>
+          <td>Viewer</td>
+          <td>Sales</td>
+          <td><span class="status active">Active</span></td>
+          <td>30 min ago</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</body>
+</html>

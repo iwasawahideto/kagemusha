@@ -1,0 +1,11 @@
+{
+  "name": "kagemusha-example",
+  "private": true,
+  "scripts": {
+    "serve": "bunx serve app",
+    "kagemusha": "kagemusha"
+  },
+  "devDependencies": {
+    "kagemusha": "file:.."
+  }
+}

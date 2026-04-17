@@ -4,5 +4,8 @@ bun.lockb
 screenshots/
 baselines/
 reports/
-.autohelp/.cookies
 *.log
+
+# kagemusha generated files (created by init)
+kagemusha.config.yaml
+.kagemusha/

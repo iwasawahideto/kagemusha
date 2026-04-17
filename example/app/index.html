@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Acme Dashboard</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f7fa; color: #1a1a2e; }
+    nav { background: #1a1a2e; color: #fff; padding: 16px 32px; display: flex; align-items: center; justify-content: space-between; }
+    nav .logo { font-weight: 700; font-size: 20px; }
+    nav .nav-links { display: flex; gap: 24px; }
+    nav a { color: #a0a0c0; text-decoration: none; font-size: 14px; }
+    nav a.active { color: #fff; }
+    .container { max-width: 1024px; margin: 32px auto; padding: 0 24px; }
+    h1 { font-size: 24px; margin-bottom: 24px; }
+    .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 32px; }
+    .card { background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .card .label { font-size: 13px; color: #888; margin-bottom: 8px; }
+    .card .value { font-size: 32px; font-weight: 700; }
+    .card .change { font-size: 13px; margin-top: 4px; }
+    .card .change.up { color: #22c55e; }
+    .card .change.down { color: #ef4444; }
+    .chart-placeholder { background: #fff; border-radius: 12px; padding: 32px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .chart-placeholder .chart-bar-group { display: flex; align-items: flex-end; gap: 12px; height: 200px; padding-top: 20px; }
+    .chart-placeholder h2 { font-size: 16px; margin-bottom: 16px; }
+    .bar { background: #6366f1; border-radius: 4px 4px 0 0; flex: 1; min-width: 24px; transition: height 0.3s; }
+    .bar-label { text-align: center; font-size: 11px; color: #888; margin-top: 6px; }
+    .bar-wrapper { flex: 1; display: flex; flex-direction: column; align-items: center; }
+    .user-menu { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+    .avatar { width: 28px; height: 28px; border-radius: 50%; background: #6366f1; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 12px; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <nav>
+    <span class="logo">Acme App</span>
+    <div class="nav-links">
+      <a href="index.html" class="active">Dashboard</a>
+      <a href="members.html">Members</a>
+      <a href="settings.html">Settings</a>
+    </div>
+    <div class="user-menu">
+      <div class="avatar">JD</div>
+      <span>John Doe</span>
+    </div>
+  </nav>
+
+  <div class="container">
+    <h1>Dashboard</h1>
+
+    <div class="cards">
+      <div class="card" id="score-card">
+        <div class="label">Engagement Score</div>
+        <div class="value">78.5</div>
+        <div class="change up">+2.3 vs last week</div>
+      </div>
+      <div class="card">
+        <div class="label">Response Rate</div>
+        <div class="value">92%</div>
+        <div class="change up">+5% vs last week</div>
+      </div>
+      <div class="card">
+        <div class="label">Active Members</div>
+        <div class="value">248</div>
+        <div class="change down">-3 vs last week</div>
+      </div>
+    </div>
+
+    <div class="chart-placeholder">
+      <h2>Weekly Trend</h2>
+      <div class="chart-bar-group">
+        <div class="bar-wrapper"><div class="bar" style="height:60%"></div><div class="bar-label">Mon</div></div>
+        <div class="bar-wrapper"><div class="bar" style="height:75%"></div><div class="bar-label">Tue</div></div>
+        <div class="bar-wrapper"><div class="bar" style="height:65%"></div><div class="bar-label">Wed</div></div>
+        <div class="bar-wrapper"><div class="bar" style="height:80%"></div><div class="bar-label">Thu</div></div>
+        <div class="bar-wrapper"><div class="bar" style="height:90%"></div><div class="bar-label">Fri</div></div>
+        <div class="bar-wrapper"><div class="bar" style="height:50%"></div><div class="bar-label">Sat</div></div>
+        <div class="bar-wrapper"><div class="bar" style="height:45%"></div><div class="bar-label">Sun</div></div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
