@@ -3,6 +3,7 @@ import path from "node:path";
 import chalk from "chalk";
 import inquirer from "inquirer";
 import { stringify as toYaml } from "yaml";
+import { discoverPages } from "../lib/crawl.js";
 
 export async function initCommand(): Promise<void> {
 	console.log(chalk.bold("\n🥷 Kagemusha — Setup\n"));
@@ -26,8 +27,8 @@ export async function initCommand(): Promise<void> {
 	const { baseUrl } = await inquirer.prompt<{ baseUrl: string }>({
 		type: "input",
 		name: "baseUrl",
-		message: "Staging environment URL:",
-		default: "https://staging.example.com",
+		message: "Target URL (the app to take screenshots of):",
+		default: "http://localhost:3000",
 	});
 
 	const { needsAuth } = await inquirer.prompt<{ needsAuth: boolean }>({
@@ -80,19 +81,50 @@ export async function initCommand(): Promise<void> {
 		submitSelector = authAnswers.submitSelector;
 	}
 
-	const { cdnBucket } = await inquirer.prompt<{ cdnBucket: string }>({
-		type: "input",
-		name: "cdnBucket",
-		message: "S3 bucket name for screenshots:",
-		default: "kagemusha-screenshots",
+	const { destination } = await inquirer.prompt<{ destination: string }>({
+		type: "list",
+		name: "destination",
+		message: "Where to save screenshots?",
+		choices: [
+			{ name: "Local (./screenshots)", value: "local" },
+			{ name: "S3", value: "s3" },
+		],
 	});
 
-	const { cdnBaseUrl } = await inquirer.prompt<{ cdnBaseUrl: string }>({
-		type: "input",
-		name: "cdnBaseUrl",
-		message: "S3 public URL base:",
-		default: `https://${cdnBucket}.s3.ap-northeast-1.amazonaws.com`,
-	});
+	let outputDir = "./screenshots";
+	let cdnBucket = "";
+	let cdnBaseUrl = "";
+
+	if (destination === "local") {
+		const { dir } = await inquirer.prompt<{ dir: string }>({
+			type: "input",
+			name: "dir",
+			message: "Output directory for screenshots:",
+			default: "./screenshots",
+		});
+		outputDir = dir;
+	} else {
+		const s3Answers = await inquirer.prompt<{
+			cdnBucket: string;
+			cdnBaseUrl: string;
+		}>([
+			{
+				type: "input",
+				name: "cdnBucket",
+				message: "S3 bucket name:",
+				default: "kagemusha-screenshots",
+			},
+			{
+				type: "input",
+				name: "cdnBaseUrl",
+				message: "S3 public URL base:",
+				default:
+					"https://kagemusha-screenshots.s3.ap-northeast-1.amazonaws.com",
+			},
+		]);
+		cdnBucket = s3Answers.cdnBucket;
+		cdnBaseUrl = s3Answers.cdnBaseUrl;
+	}
 
 	// Build config
 	const config: Record<string, unknown> = {
@@ -101,12 +133,20 @@ export async function initCommand(): Promise<void> {
 			defaultViewport: { width: 1280, height: 720, deviceScaleFactor: 2 },
 			defaultDiffThreshold: 0.5,
 		},
-		publish: {
+	};
+
+	if (destination === "local") {
+		config.publish = {
+			destination: "local",
+			outputDir,
+		};
+	} else {
+		config.publish = {
 			destination: "s3",
 			cdnBucket,
 			cdnBaseUrl,
-		},
-	};
+		};
+	}
 
 	if (needsAuth) {
 		config.auth = {
@@ -135,68 +175,72 @@ export async function initCommand(): Promise<void> {
 	);
 	console.log(chalk.green("\n✓ Created kagemusha.config.yaml"));
 
-	// Step 2: Screenshot definitions
+	// Step 2: Discover pages and create screenshot definitions
 	fs.mkdirSync(path.join(cwd, ".kagemusha/definitions"), { recursive: true });
 
-	let addMore = true;
-	while (addMore) {
-		const { id } = await inquirer.prompt<{ id: string }>({
-			type: "input",
-			name: "id",
-			message: "Screenshot ID (e.g. survey-result-page):",
-		});
-		const { name } = await inquirer.prompt<{ name: string }>({
-			type: "input",
-			name: "name",
-			message: "Display name:",
-		});
-		const { url } = await inquirer.prompt<{ url: string }>({
-			type: "input",
-			name: "url",
-			message: "Page path (e.g. /surveys/123/results):",
-		});
-		const { captureMode } = await inquirer.prompt<{ captureMode: string }>({
-			type: "list",
-			name: "captureMode",
-			message: "Capture mode:",
-			choices: [
-				{ name: "Full page", value: "fullPage" },
-				{ name: "CSS selector", value: "selector" },
-				{ name: "Crop (coordinates)", value: "crop" },
-			],
-		});
+	console.log(chalk.blue(`\n🔍 Scanning ${baseUrl} for pages...\n`));
 
-		let capture: Record<string, unknown> = { mode: captureMode };
-		if (captureMode === "selector") {
-			const { selector } = await inquirer.prompt<{ selector: string }>({
+	let pages: { path: string; title: string }[] = [];
+	try {
+		pages = await discoverPages(baseUrl);
+	} catch {
+		console.log(chalk.yellow("  Could not auto-discover pages.\n"));
+	}
+
+	let selectedPaths: string[] = [];
+
+	if (pages.length > 0) {
+		console.log(chalk.green(`  Found ${pages.length} page(s)\n`));
+
+		const { selected } = await inquirer.prompt<{ selected: string[] }>({
+			type: "checkbox",
+			name: "selected",
+			message: "Select pages to capture (space to toggle):",
+			choices: pages.map((p) => ({
+				name: `${p.path}  ${chalk.gray(p.title)}`,
+				value: p.path,
+				checked: true,
+			})),
+		});
+		selectedPaths = selected;
+	} else {
+		console.log(chalk.yellow("  No pages found. Add them manually.\n"));
+
+		let addMore = true;
+		while (addMore) {
+			const { manualPath } = await inquirer.prompt<{ manualPath: string }>({
 				type: "input",
-				name: "selector",
-				message: "CSS selector for capture:",
+				name: "manualPath",
+				message: "Page path (e.g. /index.html):",
 			});
-			capture = { mode: "selector", selector };
-		}
+			selectedPaths.push(manualPath);
 
+			const { more } = await inquirer.prompt<{ more: boolean }>({
+				type: "confirm",
+				name: "more",
+				message: "Add another page?",
+				default: false,
+			});
+			addMore = more;
+		}
+	}
+
+	for (const pagePath of selectedPaths) {
+		const id = deriveIdFromPath(pagePath);
 		const definition = {
 			id,
-			name,
-			url,
-			capture,
+			name: id,
+			url: pagePath,
+			capture: { mode: "fullPage" },
 			hideElements: [],
 			decorations: [],
 		};
 
 		const defPath = path.join(cwd, ".kagemusha/definitions", `${id}.json`);
-		fs.writeFileSync(defPath, JSON.stringify(definition, null, 2) + "\n");
-		console.log(chalk.green(`✓ Created ${defPath}`));
-
-		const { more } = await inquirer.prompt<{ more: boolean }>({
-			type: "confirm",
-			name: "more",
-			message: "Add another screenshot definition?",
-			default: false,
-		});
-		addMore = more;
+		fs.writeFileSync(defPath, `${JSON.stringify(definition, null, 2)}\n`);
+		console.log(chalk.green(`  ✓ ${id} → ${defPath}`));
 	}
+	console.log("");
 
 	// Step 3: GitHub Actions workflow
 	const { createWorkflow } = await inquirer.prompt<{ createWorkflow: boolean }>(
@@ -257,4 +301,14 @@ jobs:
           AWS_ACCESS_KEY_ID: \${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: \${{ secrets.AWS_SECRET_ACCESS_KEY }}
 `;
+}
+
+function deriveIdFromPath(urlPath: string): string {
+	return (
+		urlPath
+			.replace(/^\//, "")
+			.replace(/\.\w+$/, "")
+			.replace(/[/\\]/g, "-")
+			.replace(/[^a-zA-Z0-9-]/g, "") || "page"
+	);
 }

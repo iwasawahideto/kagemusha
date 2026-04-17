@@ -11,9 +11,10 @@ export interface KagemushaConfig {
 		defaultDiffThreshold: number;
 	};
 	publish?: {
-		destination: "intercom" | "s3";
-		cdnBucket: string;
-		cdnBaseUrl: string;
+		destination: "local" | "s3" | "intercom";
+		outputDir?: string;
+		cdnBucket?: string;
+		cdnBaseUrl?: string;
 	};
 	routing?: Route[];
 	notification?: {
