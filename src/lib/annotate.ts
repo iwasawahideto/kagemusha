@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import path from "node:path";
 import sharp from "sharp";
 import type {
 	CaptureResult,
@@ -10,7 +9,7 @@ import type {
 export async function annotateScreenshots(
 	definitions: ScreenshotDefinition[],
 	results: CaptureResult[],
-	projectRoot: string,
+	_projectRoot: string,
 ): Promise<CaptureResult[]> {
 	const annotatedResults: CaptureResult[] = [];
 

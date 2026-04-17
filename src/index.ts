@@ -61,7 +61,7 @@ program
 program
 	.command("compare")
 	.description(
-		"Compare screenshots with baselines (VRT) " + chalk.yellow("[coming soon]"),
+		`Compare screenshots with baselines (VRT) ${chalk.yellow("[coming soon]")}`,
 	)
 	.action(() => {
 		console.log(chalk.yellow("\n🚧 compare is coming in Phase 2.\n"));
