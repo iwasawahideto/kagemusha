@@ -1,5 +1,5 @@
 import chalk from "chalk";
-import { chromium } from "playwright";
+import { chromium } from "playwright-chromium";
 import { annotateScreenshots } from "../lib/annotate.js";
 import { findProjectRoot, loadConfig, loadDefinitions } from "../lib/config.js";
 import { captureScreenshots } from "../lib/screenshot.js";

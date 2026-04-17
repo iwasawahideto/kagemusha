@@ -53,8 +53,8 @@ export async function runCommand(options: RunOptions): Promise<void> {
 		chalk.green(`  ✓ Annotated ${annotatedResults.length} screenshot(s)\n`),
 	);
 
-	// Step 3: Upload to S3
-	if (config.publish) {
+	// Step 3: Publish
+	if (config.publish?.destination === "s3") {
 		console.log(chalk.blue("☁️  Uploading to S3..."));
 		const uploadResults = await uploadToS3(
 			config,
@@ -65,7 +65,7 @@ export async function runCommand(options: RunOptions): Promise<void> {
 			chalk.green(`  ✓ Uploaded ${uploadResults.length} screenshot(s)\n`),
 		);
 	} else {
-		console.log(chalk.yellow("  Skipping S3 upload (no publish config)\n"));
+		console.log(chalk.green(`  Screenshots saved locally\n`));
 	}
 
 	console.log(chalk.bold.green("✅ Pipeline complete!\n"));

@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import path from "node:path";
 import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import type { CaptureResult, KagemushaConfig } from "../types.js";
 
@@ -13,7 +12,7 @@ export interface UploadResult {
 export async function uploadToS3(
 	config: KagemushaConfig,
 	results: CaptureResult[],
-	projectRoot: string,
+	_projectRoot: string,
 ): Promise<UploadResult[]> {
 	if (!config.publish) {
 		throw new Error("publish config is required for S3 upload");
@@ -57,7 +56,7 @@ export async function uploadToS3(
 		uploadResults.push({
 			id: result.id,
 			url,
-			bucket: config.publish.cdnBucket,
+			bucket: config.publish.cdnBucket ?? "",
 			key,
 		});
 

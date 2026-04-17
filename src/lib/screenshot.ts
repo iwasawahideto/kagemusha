@@ -7,13 +7,13 @@ import type {
 	ScreenshotDefinition,
 } from "../types.js";
 
-type Browser = import("playwright").Browser;
-type Page = import("playwright").Page;
-type BrowserContext = import("playwright").BrowserContext;
+type Browser = import("playwright-chromium").Browser;
+type Page = import("playwright-chromium").Page;
+type BrowserContext = import("playwright-chromium").BrowserContext;
 
 async function loadPlaywright() {
 	try {
-		return await import("playwright");
+		return await import("playwright-chromium");
 	} catch {
 		throw new Error(
 			"Playwright is required for screenshot capture.\n" +
