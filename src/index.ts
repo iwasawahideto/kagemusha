@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
-import { Command } from "commander";
 import chalk from "chalk";
-import { initCommand } from "./commands/init.js";
-import { runCommand } from "./commands/run.js";
+import { Command } from "commander";
 import { captureCommand } from "./commands/capture.js";
+import { initCommand } from "./commands/init.js";
 import { previewCommand } from "./commands/preview.js";
+import { runCommand } from "./commands/run.js";
 import { validateCommand } from "./commands/validate.js";
 
 const BANNER = `
@@ -19,55 +19,62 @@ const BANNER = `
 const program = new Command();
 
 program
-  .name("kagemusha")
-  .version("0.1.0")
-  .addHelpText("beforeAll", BANNER)
-  .configureHelp({
-    sortSubcommands: false,
-  });
+	.name("kagemusha")
+	.version("0.1.0")
+	.addHelpText("beforeAll", BANNER)
+	.configureHelp({
+		sortSubcommands: false,
+	});
 
 program
-  .command("init")
-  .description("Set up config, screenshot definitions, and GitHub Actions workflow")
-  .action(initCommand);
+	.command("init")
+	.description(
+		"Set up config, screenshot definitions, and GitHub Actions workflow",
+	)
+	.action(initCommand);
 
 program
-  .command("run")
-  .description("Run full pipeline: capture → upload to S3")
-  .option("--ids <ids>", "Comma-separated screenshot definition IDs")
-  .action(runCommand);
+	.command("run")
+	.description("Run full pipeline: capture → upload to S3")
+	.option("--ids <ids>", "Comma-separated screenshot definition IDs")
+	.action(runCommand);
 
 program
-  .command("capture")
-  .description("Capture screenshots only")
-  .option("--ids <ids>", "Comma-separated screenshot definition IDs")
-  .option("--all", "Capture all definitions")
-  .action(captureCommand);
+	.command("capture")
+	.description("Capture screenshots only")
+	.option("--ids <ids>", "Comma-separated screenshot definition IDs")
+	.option("--all", "Capture all definitions")
+	.action(captureCommand);
 
 program
-  .command("preview")
-  .description("Preview screenshots locally (opens browser)")
-  .option("--id <id>", "Preview a specific definition")
-  .action(previewCommand);
+	.command("preview")
+	.description("Preview screenshots locally (opens browser)")
+	.option("--id <id>", "Preview a specific definition")
+	.action(previewCommand);
 
 program
-  .command("validate")
-  .description("Validate config and definition files")
-  .action(validateCommand);
+	.command("validate")
+	.description("Validate config and definition files")
+	.action(validateCommand);
 
 // Phase 2 commands
 program
-  .command("compare")
-  .description("Compare screenshots with baselines (VRT) " + chalk.yellow("[coming soon]"))
-  .action(() => {
-    console.log(chalk.yellow("\n🚧 compare is coming in Phase 2.\n"));
-  });
+	.command("compare")
+	.description(
+		"Compare screenshots with baselines (VRT) " + chalk.yellow("[coming soon]"),
+	)
+	.action(() => {
+		console.log(chalk.yellow("\n🚧 compare is coming in Phase 2.\n"));
+	});
 
 program
-  .command("publish")
-  .description("Publish screenshots to Intercom / external services " + chalk.yellow("[coming soon]"))
-  .action(() => {
-    console.log(chalk.yellow("\n🚧 publish is coming in Phase 2.\n"));
-  });
+	.command("publish")
+	.description(
+		"Publish screenshots to Intercom / external services " +
+			chalk.yellow("[coming soon]"),
+	)
+	.action(() => {
+		console.log(chalk.yellow("\n🚧 publish is coming in Phase 2.\n"));
+	});
 
 program.parse();

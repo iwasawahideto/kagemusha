@@ -1,5 +1,6 @@
 node_modules/
 dist/
+bun.lockb
 screenshots/
 baselines/
 reports/
