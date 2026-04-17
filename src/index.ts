@@ -4,7 +4,6 @@ import chalk from "chalk";
 import { Command } from "commander";
 import { captureCommand } from "./commands/capture.js";
 import { initCommand } from "./commands/init.js";
-import { previewCommand } from "./commands/preview.js";
 import { runCommand } from "./commands/run.js";
 import { validateCommand } from "./commands/validate.js";
 
@@ -44,13 +43,8 @@ program
 	.description("Capture screenshots only")
 	.option("--ids <ids>", "Comma-separated screenshot definition IDs")
 	.option("--all", "Capture all definitions")
+	.option("--open", "Open screenshots in browser after capture")
 	.action(captureCommand);
-
-program
-	.command("preview")
-	.description("Preview screenshots locally (opens browser)")
-	.option("--id <id>", "Preview a specific definition")
-	.action(previewCommand);
 
 program
 	.command("validate")

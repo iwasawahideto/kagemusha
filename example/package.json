@@ -6,6 +6,6 @@
     "kagemusha": "kagemusha"
   },
   "devDependencies": {
-    "kagemusha": "file:.."
+    "@wasao/kagemusha": "^0.1.0"
   }
 }

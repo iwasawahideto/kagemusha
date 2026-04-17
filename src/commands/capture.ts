@@ -6,6 +6,7 @@ import { captureScreenshots } from "../lib/screenshot.js";
 interface CaptureOptions {
 	ids?: string;
 	all?: boolean;
+	open?: boolean;
 }
 
 export async function captureCommand(options: CaptureOptions): Promise<void> {
@@ -31,13 +32,31 @@ export async function captureCommand(options: CaptureOptions): Promise<void> {
 	const results = await captureScreenshots(config, definitions, projectRoot);
 
 	console.log(chalk.blue("🎨 Drawing annotations..."));
-	await annotateScreenshots(definitions, results, projectRoot);
+	const annotated = await annotateScreenshots(
+		definitions,
+		results,
+		projectRoot,
+	);
 
 	console.log(
 		chalk.bold.green(`\n✅ Done! Screenshots saved to screenshots/\n`),
 	);
 
-	for (const r of results) {
-		console.log(chalk.gray(`  ${r.id} → ${r.rawPath}`));
+	for (const r of annotated) {
+		console.log(chalk.gray(`  ${r.id} → ${r.annotatedPath}`));
+	}
+
+	if (options.open) {
+		const { chromium } = await import("playwright-chromium");
+		const browser = await chromium.launch({ headless: false });
+		const context = await browser.newContext();
+
+		for (const result of annotated) {
+			const page = await context.newPage();
+			await page.goto(`file://${result.annotatedPath}`);
+		}
+
+		console.log(chalk.gray("\nPress Ctrl+C to close preview.\n"));
+		await new Promise(() => {});
 	}
 }

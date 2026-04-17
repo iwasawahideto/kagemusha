@@ -18,7 +18,7 @@ When you push code, Kagemusha automatically captures screenshots of your app and
 
 ```bash
 # Install
-npm install -D kagemusha
+npm install -D @wasao/kagemusha
 
 # Interactive setup (generates config, discovers pages, creates workflow)
 npx kagemusha init

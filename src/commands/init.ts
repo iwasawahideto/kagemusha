@@ -104,26 +104,21 @@ export async function initCommand(): Promise<void> {
 		});
 		outputDir = dir;
 	} else {
-		const s3Answers = await inquirer.prompt<{
-			cdnBucket: string;
-			cdnBaseUrl: string;
-		}>([
-			{
-				type: "input",
-				name: "cdnBucket",
-				message: "S3 bucket name:",
-				default: "kagemusha-screenshots",
-			},
-			{
-				type: "input",
-				name: "cdnBaseUrl",
-				message: "S3 public URL base:",
-				default:
-					"https://kagemusha-screenshots.s3.ap-northeast-1.amazonaws.com",
-			},
-		]);
-		cdnBucket = s3Answers.cdnBucket;
-		cdnBaseUrl = s3Answers.cdnBaseUrl;
+		const { bucket } = await inquirer.prompt<{ bucket: string }>({
+			type: "input",
+			name: "bucket",
+			message: "S3 bucket name:",
+			default: "kagemusha-screenshots",
+		});
+		cdnBucket = bucket;
+
+		const { url } = await inquirer.prompt<{ url: string }>({
+			type: "input",
+			name: "url",
+			message: "S3 public URL base:",
+			default: `https://${bucket}.s3.ap-northeast-1.amazonaws.com`,
+		});
+		cdnBaseUrl = url;
 	}
 
 	// Build config

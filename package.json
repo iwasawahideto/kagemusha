@@ -1,5 +1,5 @@
 {
-  "name": "kagemusha",
+  "name": "@wasao/kagemusha",
   "version": "0.1.0",
   "description": "Auto-update help center screenshots when your code changes. The shadow warrior for your documentation.",
   "type": "module",
