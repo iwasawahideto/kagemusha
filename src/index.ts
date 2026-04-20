@@ -2,7 +2,9 @@
 
 import chalk from "chalk";
 import { Command } from "commander";
+import { addCommand } from "./commands/add.js";
 import { captureCommand } from "./commands/capture.js";
+import { discoverCommand } from "./commands/discover.js";
 import { editCommand } from "./commands/edit.js";
 import { initCommand } from "./commands/init.js";
 import { loginCommand } from "./commands/login.js";
@@ -38,6 +40,21 @@ program
 	.command("login")
 	.description("Log in to your app (opens browser, saves session)")
 	.action(loginCommand);
+
+program
+	.command("add <path>")
+	.description("Add a screenshot definition for a page path")
+	.option(
+		"--capture <mode>",
+		"Capture mode: fullPage, selector, crop",
+		"fullPage",
+	)
+	.action(addCommand);
+
+program
+	.command("discover")
+	.description("Browse your app manually, record visited pages as definitions")
+	.action(discoverCommand);
 
 program
 	.command("run")
