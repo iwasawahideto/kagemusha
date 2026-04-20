@@ -5,6 +5,7 @@ import { Command } from "commander";
 import { captureCommand } from "./commands/capture.js";
 import { editCommand } from "./commands/edit.js";
 import { initCommand } from "./commands/init.js";
+import { loginCommand } from "./commands/login.js";
 import { runCommand } from "./commands/run.js";
 import { validateCommand } from "./commands/validate.js";
 
@@ -32,6 +33,11 @@ program
 		"Set up config, screenshot definitions, and GitHub Actions workflow",
 	)
 	.action(initCommand);
+
+program
+	.command("login")
+	.description("Log in to your app (opens browser, saves session)")
+	.action(loginCommand);
 
 program
 	.command("run")

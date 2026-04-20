@@ -37,7 +37,7 @@ export async function captureScreenshots(
 	const results: CaptureResult[] = [];
 
 	try {
-		const context = await createAuthenticatedContext(browser, config);
+		const context = await createContext(browser, config, projectRoot);
 
 		for (const def of definitions) {
 			const result = await captureOne(context, config, def, outputDir);
@@ -52,26 +52,20 @@ export async function captureScreenshots(
 	return results;
 }
 
-async function createAuthenticatedContext(
+async function createContext(
 	browser: Browser,
 	config: KagemushaConfig,
+	projectRoot: string,
 ): Promise<BrowserContext> {
 	const viewport = config.screenshot.defaultViewport;
+	const authStatePath = path.join(projectRoot, ".kagemusha", "auth-state.json");
+	const hasAuth = fs.existsSync(authStatePath);
+
 	const context = await browser.newContext({
 		viewport: { width: viewport.width, height: viewport.height },
 		deviceScaleFactor: viewport.deviceScaleFactor ?? 2,
+		...(hasAuth ? { storageState: authStatePath } : {}),
 	});
-
-	if (config.auth) {
-		const page = await context.newPage();
-		const loginUrl = new URL(
-			config.auth.loginUrl,
-			config.app.baseUrl,
-		).toString();
-		await page.goto(loginUrl);
-		await executeActions(page, config.auth.steps);
-		await page.close();
-	}
 
 	return context;
 }

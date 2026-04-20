@@ -4,6 +4,7 @@ import chalk from "chalk";
 import inquirer from "inquirer";
 import { stringify as toYaml } from "yaml";
 import { discoverPages } from "../lib/crawl.js";
+import type { KagemushaConfig } from "../types.js";
 
 export async function initCommand(): Promise<void> {
 	console.log(chalk.bold("\n🥷 Kagemusha — Setup\n"));
@@ -30,56 +31,6 @@ export async function initCommand(): Promise<void> {
 		message: "Target URL (the app to take screenshots of):",
 		default: "http://localhost:3000",
 	});
-
-	const { needsAuth } = await inquirer.prompt<{ needsAuth: boolean }>({
-		type: "confirm",
-		name: "needsAuth",
-		message: "Does the app require login?",
-		default: true,
-	});
-
-	let loginUrl = "/login";
-	let emailSelector = "#email";
-	let passwordSelector = "#password";
-	let submitSelector = "button[type='submit']";
-
-	if (needsAuth) {
-		const authAnswers = await inquirer.prompt<{
-			loginUrl: string;
-			emailSelector: string;
-			passwordSelector: string;
-			submitSelector: string;
-		}>([
-			{
-				type: "input",
-				name: "loginUrl",
-				message: "Login page path:",
-				default: "/login",
-			},
-			{
-				type: "input",
-				name: "emailSelector",
-				message: "Email input selector:",
-				default: "#email",
-			},
-			{
-				type: "input",
-				name: "passwordSelector",
-				message: "Password input selector:",
-				default: "#password",
-			},
-			{
-				type: "input",
-				name: "submitSelector",
-				message: "Login button selector:",
-				default: "button[type='submit']",
-			},
-		]);
-		loginUrl = authAnswers.loginUrl;
-		emailSelector = authAnswers.emailSelector;
-		passwordSelector = authAnswers.passwordSelector;
-		submitSelector = authAnswers.submitSelector;
-	}
 
 	const { destination } = await inquirer.prompt<{ destination: string }>({
 		type: "list",
@@ -122,46 +73,17 @@ export async function initCommand(): Promise<void> {
 	}
 
 	// Build config
-	const config: Record<string, unknown> = {
+	const config: KagemushaConfig = {
 		app: { baseUrl },
 		screenshot: {
 			defaultViewport: { width: 1280, height: 720, deviceScaleFactor: 2 },
 			defaultDiffThreshold: 0.5,
 		},
+		publish:
+			destination === "local"
+				? { destination: "local", outputDir }
+				: { destination: "s3", cdnBucket, cdnBaseUrl },
 	};
-
-	if (destination === "local") {
-		config.publish = {
-			destination: "local",
-			outputDir,
-		};
-	} else {
-		config.publish = {
-			destination: "s3",
-			cdnBucket,
-			cdnBaseUrl,
-		};
-	}
-
-	if (needsAuth) {
-		config.auth = {
-			loginUrl,
-			steps: [
-				{
-					action: "type",
-					selector: emailSelector,
-					text: "${KAGEMUSHA_DEMO_EMAIL}",
-				},
-				{
-					action: "type",
-					selector: passwordSelector,
-					text: "${KAGEMUSHA_DEMO_PASSWORD}",
-				},
-				{ action: "click", selector: submitSelector },
-				{ action: "waitForNavigation" },
-			],
-		};
-	}
 
 	// Write config
 	fs.writeFileSync(
@@ -173,11 +95,30 @@ export async function initCommand(): Promise<void> {
 	// Step 2: Discover pages and create screenshot definitions
 	fs.mkdirSync(path.join(cwd, ".kagemusha/definitions"), { recursive: true });
 
-	console.log(chalk.blue(`\n🔍 Scanning ${baseUrl} for pages...\n`));
+	// Check if login is needed
+	const authStatePath = path.join(cwd, ".kagemusha", "auth-state.json");
+	if (!fs.existsSync(authStatePath)) {
+		const { needsLogin } = await inquirer.prompt<{ needsLogin: boolean }>({
+			type: "confirm",
+			name: "needsLogin",
+			message: "Does this app require login?",
+			default: true,
+		});
+
+		if (needsLogin) {
+			console.log(chalk.blue("\n🔐 Opening browser for login...\n"));
+			const { loginCommand } = await import("./login.js");
+			await loginCommand();
+		}
+	} else {
+		console.log(chalk.green("  ✓ Using saved login session\n"));
+	}
+
+	console.log(chalk.blue(`🔍 Scanning ${baseUrl} for pages...\n`));
 
 	let pages: { path: string; title: string }[] = [];
 	try {
-		pages = await discoverPages(baseUrl);
+		pages = await discoverPages(baseUrl, config, cwd);
 	} catch {
 		console.log(chalk.yellow("  Could not auto-discover pages.\n"));
 	}
@@ -259,11 +200,13 @@ export async function initCommand(): Promise<void> {
 
 	console.log(chalk.bold.green("\n✅ Setup complete!\n"));
 	console.log(chalk.gray("Next steps:"));
+	console.log(chalk.gray("  npx kagemusha capture    — Capture screenshots"));
 	console.log(
-		chalk.gray("  npx kagemusha preview    — Preview screenshots locally"),
+		chalk.gray("  npx kagemusha edit       — Edit annotations visually"),
 	);
-	console.log(chalk.gray("  npx kagemusha validate   — Validate config files"));
-	console.log(chalk.gray("  npx kagemusha run        — Run full pipeline\n"));
+	console.log(
+		chalk.gray("  npx kagemusha run        — Capture + upload to S3\n"),
+	);
 }
 
 function generateWorkflowTemplate(): string {
