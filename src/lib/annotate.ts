@@ -118,7 +118,7 @@ function renderLabel(dec: Extract<Decoration, { type: "label" }>): string {
 	return `
     <rect x="${pos.x - paddingX}" y="${pos.y - textHeight - paddingY}"
       width="${textWidth + paddingX * 2}" height="${textHeight + paddingY * 2}"
-      rx="4" ry="4" fill="${bg}" stroke="${color}" stroke-width="1" />
+      rx="4" ry="4" fill="${bg}" />
     <text x="${pos.x}" y="${pos.y}" font-size="${fontSize}"
       fill="${color}" font-family="sans-serif">${escapeXml(dec.text)}</text>
   `;
