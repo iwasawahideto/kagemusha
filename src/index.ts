@@ -3,6 +3,7 @@
 import chalk from "chalk";
 import { Command } from "commander";
 import { captureCommand } from "./commands/capture.js";
+import { editCommand } from "./commands/edit.js";
 import { initCommand } from "./commands/init.js";
 import { runCommand } from "./commands/run.js";
 import { validateCommand } from "./commands/validate.js";
@@ -45,6 +46,12 @@ program
 	.option("--all", "Capture all definitions")
 	.option("--open", "Open screenshots in browser after capture")
 	.action(captureCommand);
+
+program
+	.command("edit")
+	.description("Open visual annotation editor for a screenshot")
+	.option("--id <id>", "Screenshot definition ID to edit")
+	.action(editCommand);
 
 program
 	.command("validate")
