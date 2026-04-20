@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import chalk from "chalk";
 import type { Page } from "playwright-chromium";
 import type { KagemushaConfig } from "../types.js";
 
@@ -12,8 +13,8 @@ export const discoverPages = async (
 	baseUrl: string,
 	_config?: KagemushaConfig,
 	projectRoot?: string,
-	maxDepth = 2,
-	maxPages = 50,
+	maxDepth = 3,
+	maxPages = 200,
 ): Promise<DiscoveredPage[]> => {
 	const { chromium } = await import("playwright-chromium");
 	const browser = await chromium.launch({ headless: true });
@@ -69,17 +70,19 @@ export const discoverPages = async (
 			// Deduplicate by URL pattern (replace IDs/UUIDs with *)
 			const pattern = toPattern(new URL(normalized).pathname);
 			if (seenPatterns.has(pattern)) continue;
+			seenPatterns.add(pattern);
 
 			visited.add(normalized);
 
+			const urlPath = new URL(normalized).pathname;
+
 			try {
-				const urlPath = new URL(normalized).pathname;
-				process.stdout.write(`  Scanning ${urlPath}...`);
+				process.stdout.write(chalk.gray(`  ${urlPath}`));
 
 				const page = await context.newPage();
 				await page.goto(normalized, {
 					waitUntil: "networkidle",
-					timeout: 15000,
+					timeout: 60000,
 				});
 
 				const title = await page.title();
@@ -88,13 +91,13 @@ export const discoverPages = async (
 				// Also check pattern of the final URL (after redirects)
 				const finalPattern = toPattern(pagePath);
 				if (seenPatterns.has(finalPattern)) {
-					process.stdout.write(" (duplicate pattern, skipping)\n");
+					process.stdout.write(chalk.gray(" (skip)\n"));
 					await page.close();
 					continue;
 				}
 				seenPatterns.add(finalPattern);
 
-				process.stdout.write(` ${title}\n`);
+				process.stdout.write(`  ${chalk.green("✓")} ${chalk.white(title)}\n`);
 
 				results.push({
 					path: pagePath,
@@ -104,16 +107,21 @@ export const discoverPages = async (
 				if (item.depth < maxDepth) {
 					const links = await collectLinks(page, origin);
 					for (const link of links) {
-						if (!visited.has(link)) {
-							queue.push({ url: link, depth: item.depth + 1 });
-						}
+						if (visited.has(link)) continue;
+						const linkPattern = toPattern(new URL(link).pathname);
+						if (seenPatterns.has(linkPattern)) continue;
+						queue.push({ url: link, depth: item.depth + 1 });
 					}
 				}
 
 				await page.close();
 			} catch {
-				process.stdout.write(" (failed, skipping)\n");
+				process.stdout.write(chalk.yellow(" (timeout, skip)\n"));
 			}
+		}
+
+		if (results.length >= maxPages) {
+			console.log(chalk.gray(`\n  Reached max ${maxPages} pages, stopping.\n`));
 		}
 	} finally {
 		await browser.close();

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import chalk from "chalk";
 import { findProjectRoot, loadConfig } from "../lib/config.js";
-import { getAuthStatePath, hasAuthState } from "./login.js";
+import { discoverPages } from "../lib/crawl.js";
 
 export const discoverCommand = async (): Promise<void> => {
 	console.log(chalk.bold("\n🥷 Kagemusha — Discover Pages\n"));
@@ -10,152 +10,46 @@ export const discoverCommand = async (): Promise<void> => {
 	const projectRoot = findProjectRoot();
 	const config = loadConfig(projectRoot);
 
-	const { chromium } = await import("playwright-chromium");
-	const browser = await chromium.launch({ headless: true });
+	console.log(chalk.blue(`🔍 Crawling ${config.app.baseUrl} for pages...\n`));
 
-	const authStatePath = getAuthStatePath(projectRoot);
-	const context = await browser.newContext({
-		viewport: {
-			width: config.screenshot.defaultViewport.width,
-			height: config.screenshot.defaultViewport.height,
-		},
-		...(hasAuthState(projectRoot) ? { storageState: authStatePath } : {}),
-	});
-
-	const origin = new URL(config.app.baseUrl).origin;
-	const discoveredPaths = new Set<string>();
-
-	// Determine start URL from auth meta or base URL
-	let startUrl = config.app.baseUrl;
-	const metaPath = path.join(projectRoot, ".kagemusha", "auth-meta.json");
-	if (fs.existsSync(metaPath)) {
-		const meta = JSON.parse(fs.readFileSync(metaPath, "utf-8"));
-		if (meta.loginPath) {
-			discoveredPaths.add(meta.loginPath);
-			console.log(chalk.green(`  + ${meta.loginPath} (login)`));
-		}
-		if (meta.landingPath) {
-			startUrl = new URL(meta.landingPath, config.app.baseUrl).toString();
-		}
+	let pages: { path: string; title: string }[] = [];
+	try {
+		pages = await discoverPages(config.app.baseUrl, config, projectRoot);
+	} catch (e) {
+		console.log(
+			chalk.red(
+				`\n❌ Failed to crawl: ${e instanceof Error ? e.message : e}\n`,
+			),
+		);
+		return;
 	}
 
-	console.log(chalk.blue(`🔍 Auto-discovering pages from navigation...\n`));
-
-	const page = await context.newPage();
-	await page.goto(startUrl, { waitUntil: "networkidle", timeout: 15000 });
-
-	// Record starting page
-	const startPath = new URL(page.url()).pathname;
-	discoveredPaths.add(startPath);
-	console.log(chalk.green(`  + ${startPath}`));
-
-	// Find all clickable nav elements
-	const navLinks = await page.evaluate((orig) => {
-		const selectors = [
-			"nav a",
-			"aside a",
-			"[role='navigation'] a",
-			"nav button",
-			"aside button",
-			"[role='navigation'] button",
-			"[data-testid*='nav'] a",
-			"[data-testid*='menu'] a",
-			"[class*='sidebar'] a",
-			"[class*='Sidebar'] a",
-			"[class*='nav'] a",
-			"[class*='Nav'] a",
-			"[class*='menu'] a",
-			"[class*='Menu'] a",
-		];
-
-		const elements: { index: number; text: string; tag: string }[] = [];
-		const seen = new Set<string>();
-
-		for (const sel of selectors) {
-			for (const el of Array.from(document.querySelectorAll(sel))) {
-				const text = (el.textContent ?? "").trim().substring(0, 50);
-				const key = `${el.tagName}-${text}`;
-				if (seen.has(key) || !text) continue;
-				seen.add(key);
-
-				// Skip external links
-				if (el instanceof HTMLAnchorElement) {
-					try {
-						const url = new URL(el.href);
-						if (url.origin !== orig) continue;
-					} catch {
-						continue;
-					}
-				}
-
-				// Get index for later clicking
-				const all = Array.from(document.querySelectorAll(sel));
-				const idx = all.indexOf(el);
-				elements.push({ index: idx, text, tag: sel });
-			}
-		}
-		return elements;
-	}, origin);
-
-	console.log(
-		chalk.gray(`  Found ${navLinks.length} navigation elements to try\n`),
-	);
-
-	// Click each nav element and record URL changes
-	for (const link of navLinks) {
-		try {
-			const elements = page.locator(link.tag);
-			const el = elements.nth(link.index);
-
-			if (!(await el.isVisible())) continue;
-
-			const beforeUrl = page.url();
-			await el.click({ timeout: 3000 });
-			await page
-				.waitForLoadState("networkidle", { timeout: 5000 })
-				.catch(() => {});
-			await page.waitForTimeout(500);
-
-			const afterUrl = page.url();
-			const afterPath = new URL(afterUrl).pathname;
-
-			if (afterUrl !== beforeUrl && new URL(afterUrl).origin === origin) {
-				if (!discoveredPaths.has(afterPath)) {
-					discoveredPaths.add(afterPath);
-					console.log(
-						chalk.green(`  + ${afterPath}  ${chalk.gray(link.text)}`),
-					);
-				}
-			}
-
-			// Go back to start page for next click
-			if (afterUrl !== beforeUrl) {
-				await page.goto(startUrl, { waitUntil: "networkidle", timeout: 10000 });
-			}
-		} catch {
-			// Skip elements that can't be clicked
-		}
-	}
-
-	await browser.close();
-
-	if (discoveredPaths.size === 0) {
+	if (pages.length === 0) {
 		console.log(chalk.yellow("\n⚠ No pages discovered.\n"));
 		return;
 	}
+
+	console.log(chalk.green(`\n  Found ${pages.length} page(s)\n`));
 
 	// Let user select which pages to add
 	const inquirer = await import("inquirer");
 	const { selected } = await inquirer.default.prompt<{ selected: string[] }>({
 		type: "checkbox",
 		name: "selected",
-		message: "Select pages to add:",
-		choices: [...discoveredPaths].map((p) => ({
-			name: p,
-			value: p,
+		message: `Select pages to add (${pages.length} found):`,
+		choices: pages.map((p) => ({
+			name: `${p.path}  ${chalk.gray(p.title)}`,
+			value: p.path,
 			checked: true,
 		})),
+		pageSize: 30,
+		loop: false,
 	});
+
+	if (selected.length === 0) {
+		console.log(chalk.yellow("\n⚠ No pages selected.\n"));
+		return;
+	}
 
 	// Save definitions
 	const defsDir = path.join(projectRoot, ".kagemusha/definitions");

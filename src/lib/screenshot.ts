@@ -40,8 +40,12 @@ export async function captureScreenshots(
 		const context = await createContext(browser, config, projectRoot);
 
 		for (const def of definitions) {
-			const result = await captureOne(context, config, def, outputDir);
-			results.push(result);
+			try {
+				const result = await captureOne(context, config, def, outputDir);
+				results.push(result);
+			} catch (e) {
+				console.error(`  ⚠ ${def.id}: ${e instanceof Error ? e.message : e}`);
+			}
 		}
 
 		await context.close();
@@ -86,7 +90,7 @@ async function captureOne(
 	}
 
 	const url = resolveUrl(config.app.baseUrl, def.url, def.urlParams);
-	await page.goto(url, { waitUntil: "networkidle" });
+	await page.goto(url, { waitUntil: "networkidle", timeout: 60000 });
 
 	if (def.hideElements?.length) {
 		await hideElements(page, def.hideElements);
