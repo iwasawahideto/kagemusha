@@ -2,9 +2,12 @@
 
 import chalk from "chalk";
 import { Command } from "commander";
+import { addCommand } from "./commands/add.js";
 import { captureCommand } from "./commands/capture.js";
+import { discoverCommand } from "./commands/discover.js";
 import { editCommand } from "./commands/edit.js";
 import { initCommand } from "./commands/init.js";
+import { loginCommand } from "./commands/login.js";
 import { runCommand } from "./commands/run.js";
 import { validateCommand } from "./commands/validate.js";
 
@@ -32,6 +35,24 @@ program
 		"Set up config, screenshot definitions, and GitHub Actions workflow",
 	)
 	.action(initCommand);
+
+program
+	.command("login")
+	.description("Log in to your app (opens browser, saves session)")
+	.action(loginCommand);
+
+program
+	.command("add <path>")
+	.description(
+		"Add a screenshot definition (defaults to fullPage; use 'edit' to change capture range)",
+	)
+	.option("--id <id>", "Custom definition ID (auto-suffixed if exists)")
+	.action(addCommand);
+
+program
+	.command("discover")
+	.description("Auto-discover pages by crawling your app")
+	.action(discoverCommand);
 
 program
 	.command("run")

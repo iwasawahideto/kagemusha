@@ -1,6 +1,6 @@
 {
   "name": "@wasao/kagemusha",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Auto-update help center screenshots when your code changes. The shadow warrior for your documentation.",
   "type": "module",
   "exports": {
