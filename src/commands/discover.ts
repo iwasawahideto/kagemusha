@@ -1,8 +1,12 @@
-import fs from "node:fs";
-import path from "node:path";
 import chalk from "chalk";
-import { findProjectRoot, loadConfig } from "../lib/config.js";
+import {
+	findProjectRoot,
+	loadConfig,
+	loadDefinitions,
+	saveDefinitions,
+} from "../lib/config.js";
 import { discoverPages } from "../lib/crawl.js";
+import { deriveIdFromPath } from "../lib/definition.js";
 
 export const discoverCommand = async (): Promise<void> => {
 	console.log(chalk.bold("\n🥷 Kagemusha — Discover Pages\n"));
@@ -14,7 +18,7 @@ export const discoverCommand = async (): Promise<void> => {
 
 	let pages: { path: string; title: string }[] = [];
 	try {
-		pages = await discoverPages(config.app.baseUrl, config, projectRoot);
+		pages = await discoverPages(config.app.baseUrl, projectRoot);
 	} catch (e) {
 		console.log(
 			chalk.red(
@@ -31,7 +35,6 @@ export const discoverCommand = async (): Promise<void> => {
 
 	console.log(chalk.green(`\n  Found ${pages.length} page(s)\n`));
 
-	// Let user select which pages to add
 	const inquirer = await import("inquirer");
 	const { selected } = await inquirer.default.prompt<{ selected: string[] }>({
 		type: "checkbox",
@@ -46,39 +49,33 @@ export const discoverCommand = async (): Promise<void> => {
 		loop: false,
 	});
 
+	// Clear inquirer's verbose answer output
+	process.stdout.write("\x1B[1A\x1B[2K");
+
 	if (selected.length === 0) {
 		console.log(chalk.yellow("\n⚠ No pages selected.\n"));
 		return;
 	}
 
-	// Save definitions
-	const defsDir = path.join(projectRoot, ".kagemusha/definitions");
-	fs.mkdirSync(defsDir, { recursive: true });
+	const definitions = loadDefinitions(projectRoot);
+	const existingIds = new Set(definitions.map((d) => d.id));
 
 	let added = 0;
 	for (const pagePath of selected) {
-		const id =
-			pagePath
-				.replace(/^\//, "")
-				.replace(/\.\w+$/, "")
-				.replace(/[/\\]/g, "-")
-				.replace(/[^a-zA-Z0-9-]/g, "") || "page";
+		const id = deriveIdFromPath(pagePath);
+		if (existingIds.has(id)) continue;
 
-		const defPath = path.join(defsDir, `${id}.json`);
-		if (fs.existsSync(defPath)) continue;
-
-		const definition = {
+		definitions.push({
 			id,
 			name: id,
 			url: pagePath,
 			capture: { mode: "fullPage" },
 			hideElements: [],
 			decorations: [],
-		};
-
-		fs.writeFileSync(defPath, `${JSON.stringify(definition, null, 2)}\n`);
+		});
 		added++;
 	}
 
-	console.log(chalk.bold.green(`\n✅ Added ${added} new definition(s)\n`));
+	saveDefinitions(definitions, projectRoot);
+	console.log(chalk.bold.green(`✅ Added ${added} new definition(s)\n`));
 };

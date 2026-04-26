@@ -3,8 +3,11 @@ import path from "node:path";
 import chalk from "chalk";
 import inquirer from "inquirer";
 import { stringify as toYaml } from "yaml";
+import { hasAuthState } from "../lib/auth.js";
+import { saveDefinitions } from "../lib/config.js";
 import { discoverPages } from "../lib/crawl.js";
-import type { KagemushaConfig } from "../types.js";
+import { deriveIdFromPath } from "../lib/definition.js";
+import type { KagemushaConfig, ScreenshotDefinition } from "../types.js";
 
 export async function initCommand(): Promise<void> {
 	console.log(chalk.bold("\n🥷 Kagemusha — Setup\n"));
@@ -93,11 +96,9 @@ export async function initCommand(): Promise<void> {
 	console.log(chalk.green("\n✓ Created kagemusha.config.yaml"));
 
 	// Step 2: Discover pages and create screenshot definitions
-	fs.mkdirSync(path.join(cwd, ".kagemusha/definitions"), { recursive: true });
 
 	// Check if login is needed
-	const authStatePath = path.join(cwd, ".kagemusha", "auth-state.json");
-	if (!fs.existsSync(authStatePath)) {
+	if (!hasAuthState(cwd)) {
 		const { needsLogin } = await inquirer.prompt<{ needsLogin: boolean }>({
 			type: "confirm",
 			name: "needsLogin",
@@ -118,7 +119,7 @@ export async function initCommand(): Promise<void> {
 
 	let pages: { path: string; title: string }[] = [];
 	try {
-		pages = await discoverPages(baseUrl, config, cwd);
+		pages = await discoverPages(baseUrl, cwd);
 	} catch {
 		console.log(chalk.yellow("  Could not auto-discover pages.\n"));
 	}
@@ -161,20 +162,23 @@ export async function initCommand(): Promise<void> {
 		}
 	}
 
-	for (const pagePath of selectedPaths) {
+	const definitions: ScreenshotDefinition[] = selectedPaths.map((pagePath) => {
 		const id = deriveIdFromPath(pagePath);
-		const definition = {
+		return {
 			id,
 			name: id,
 			url: pagePath,
-			capture: { mode: "fullPage" },
+			capture: { mode: "fullPage" as const },
 			hideElements: [],
 			decorations: [],
 		};
+	});
 
-		const defPath = path.join(cwd, ".kagemusha/definitions", `${id}.json`);
-		fs.writeFileSync(defPath, `${JSON.stringify(definition, null, 2)}\n`);
-		console.log(chalk.green(`  ✓ ${id} → ${defPath}`));
+	if (definitions.length > 0) {
+		saveDefinitions(definitions, cwd);
+		for (const d of definitions) {
+			console.log(chalk.green(`  ✓ ${d.id}`));
+		}
 	}
 	console.log("");
 
@@ -239,14 +243,4 @@ jobs:
           AWS_ACCESS_KEY_ID: \${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: \${{ secrets.AWS_SECRET_ACCESS_KEY }}
 `;
-}
-
-function deriveIdFromPath(urlPath: string): string {
-	return (
-		urlPath
-			.replace(/^\//, "")
-			.replace(/\.\w+$/, "")
-			.replace(/[/\\]/g, "-")
-			.replace(/[^a-zA-Z0-9-]/g, "") || "page"
-	);
 }

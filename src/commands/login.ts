@@ -1,15 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import chalk from "chalk";
+import { getAuthMetaPath, getAuthStatePath } from "../lib/auth.js";
 import { findProjectRoot, loadConfig } from "../lib/config.js";
-
-const AUTH_STATE_FILE = ".kagemusha/auth-state.json";
-
-export const getAuthStatePath = (projectRoot: string): string =>
-	path.join(projectRoot, AUTH_STATE_FILE);
-
-export const hasAuthState = (projectRoot: string): boolean =>
-	fs.existsSync(getAuthStatePath(projectRoot));
 
 export const loginCommand = async (): Promise<void> => {
 	console.log(chalk.bold("\n🥷 Kagemusha — Login\n"));
@@ -59,7 +52,7 @@ export const loginCommand = async (): Promise<void> => {
 	await context.storageState({ path: authStatePath });
 
 	// Save landing page path for crawl starting point
-	const metaPath = path.join(projectRoot, ".kagemusha", "auth-meta.json");
+	const metaPath = getAuthMetaPath(projectRoot);
 	fs.writeFileSync(
 		metaPath,
 		JSON.stringify({ loginPath, landingPath }, null, 2),
@@ -67,6 +60,6 @@ export const loginCommand = async (): Promise<void> => {
 
 	await browser.close();
 
-	console.log(chalk.bold.green(`\n✅ Session saved to ${AUTH_STATE_FILE}`));
+	console.log(chalk.bold.green("\n✅ Session saved"));
 	console.log(chalk.gray(`   Landing page: ${landingPath}\n`));
 };

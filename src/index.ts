@@ -44,6 +44,7 @@ program
 program
 	.command("add <path>")
 	.description("Add a screenshot definition for a page path")
+	.option("--id <id>", "Custom definition ID (auto-suffixed if exists)")
 	.option(
 		"--capture <mode>",
 		"Capture mode: fullPage, selector, crop",
@@ -53,7 +54,7 @@ program
 
 program
 	.command("discover")
-	.description("Browse your app manually, record visited pages as definitions")
+	.description("Auto-discover pages by crawling your app")
 	.action(discoverCommand);
 
 program

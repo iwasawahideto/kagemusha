@@ -55,8 +55,8 @@ npx kagemusha run
 `kagemusha init` generates these files:
 
 ```
-kagemusha.config.yaml          # App URL, auth, save destination
-.kagemusha/definitions/*.json  # One file per screenshot
+kagemusha.config.yaml         # App URL, auth, save destination
+.kagemusha/definitions.json   # All screenshot definitions
 ```
 
 ### Screenshot definition example

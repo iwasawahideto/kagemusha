@@ -4,7 +4,7 @@ import { parse as parseYaml } from "yaml";
 import type { KagemushaConfig, Route, ScreenshotDefinition } from "../types.js";
 
 const CONFIG_FILENAME = "kagemusha.config.yaml";
-const DEFINITIONS_DIR = ".kagemusha/definitions";
+const DEFINITIONS_FILE = ".kagemusha/definitions.json";
 const ROUTING_FILENAME = ".kagemusha/routing.yaml";
 
 export function findProjectRoot(startDir: string = process.cwd()): string {
@@ -34,19 +34,29 @@ export function loadConfig(projectRoot?: string): KagemushaConfig {
 	return config;
 }
 
-export function loadDefinitions(projectRoot?: string): ScreenshotDefinition[] {
+export function getDefinitionsPath(projectRoot?: string): string {
 	const root = projectRoot ?? findProjectRoot();
-	const defsDir = path.join(root, DEFINITIONS_DIR);
+	return path.join(root, DEFINITIONS_FILE);
+}
 
-	if (!fs.existsSync(defsDir)) {
+export function loadDefinitions(projectRoot?: string): ScreenshotDefinition[] {
+	const defsPath = getDefinitionsPath(projectRoot);
+
+	if (!fs.existsSync(defsPath)) {
 		return [];
 	}
 
-	const files = fs.readdirSync(defsDir).filter((f) => f.endsWith(".json"));
-	return files.map((file) => {
-		const content = fs.readFileSync(path.join(defsDir, file), "utf-8");
-		return JSON.parse(content) as ScreenshotDefinition;
-	});
+	const content = fs.readFileSync(defsPath, "utf-8");
+	return JSON.parse(content) as ScreenshotDefinition[];
+}
+
+export function saveDefinitions(
+	definitions: ScreenshotDefinition[],
+	projectRoot?: string,
+): void {
+	const defsPath = getDefinitionsPath(projectRoot);
+	fs.mkdirSync(path.dirname(defsPath), { recursive: true });
+	fs.writeFileSync(defsPath, `${JSON.stringify(definitions, null, 2)}\n`);
 }
 
 export function loadRouting(projectRoot?: string): Route[] {

@@ -1,10 +1,14 @@
-import fs from "node:fs";
-import path from "node:path";
 import chalk from "chalk";
-import { findProjectRoot } from "../lib/config.js";
+import {
+	findProjectRoot,
+	loadDefinitions,
+	saveDefinitions,
+} from "../lib/config.js";
+import { deriveIdFromPath } from "../lib/definition.js";
 
 interface AddOptions {
 	capture?: string;
+	id?: string;
 }
 
 export const addCommand = async (
@@ -12,32 +16,27 @@ export const addCommand = async (
 	options: AddOptions,
 ): Promise<void> => {
 	const projectRoot = findProjectRoot();
-	const defsDir = path.join(projectRoot, ".kagemusha/definitions");
-	fs.mkdirSync(defsDir, { recursive: true });
+	const definitions = loadDefinitions(projectRoot);
 
-	const id =
-		pagePath
-			.replace(/^\//, "")
-			.replace(/\.\w+$/, "")
-			.replace(/[/\\]/g, "-")
-			.replace(/[^a-zA-Z0-9-]/g, "") || "page";
+	const baseId = options.id ?? deriveIdFromPath(pagePath);
 
-	const defPath = path.join(defsDir, `${id}.json`);
-
-	if (fs.existsSync(defPath)) {
-		console.log(chalk.yellow(`\n⚠ Definition already exists: ${defPath}\n`));
-		return;
+	// If ID already exists, append a suffix
+	let id = baseId;
+	let suffix = 2;
+	while (definitions.some((d) => d.id === id)) {
+		id = `${baseId}-${suffix}`;
+		suffix++;
 	}
 
-	const definition = {
+	definitions.push({
 		id,
 		name: id,
 		url: pagePath,
-		capture: { mode: options.capture ?? "fullPage" },
+		capture: { mode: "fullPage" },
 		hideElements: [],
 		decorations: [],
-	};
+	});
 
-	fs.writeFileSync(defPath, `${JSON.stringify(definition, null, 2)}\n`);
-	console.log(chalk.green(`\n✅ Added ${id} → ${defPath}\n`));
+	saveDefinitions(definitions, projectRoot);
+	console.log(chalk.green(`\n✅ Added ${id}\n`));
 };

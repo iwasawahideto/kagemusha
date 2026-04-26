@@ -2,7 +2,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import chalk from "chalk";
-import { findProjectRoot, loadConfig, loadDefinitions } from "../lib/config.js";
+import {
+	findProjectRoot,
+	loadConfig,
+	loadDefinitions,
+	saveDefinitions,
+} from "../lib/config.js";
 
 interface EditOptions {
 	id?: string;
@@ -75,12 +80,6 @@ export async function editCommand(options: EditOptions): Promise<void> {
 	}
 
 	// Expose save function from Node.js to browser
-	const defPath = path.join(
-		projectRoot,
-		".kagemusha/definitions",
-		`${def.id}.json`,
-	);
-
 	let savedCount = 0;
 	let saveResolve: () => void;
 	const savePromise = new Promise<void>((resolve) => {
@@ -91,8 +90,13 @@ export async function editCommand(options: EditOptions): Promise<void> {
 	await page.exposeFunction("__kagemusha_save", (decorationsJson: string) => {
 		const decorations = JSON.parse(decorationsJson);
 		savedCount = decorations.length;
-		const updatedDef = { ...def, decorations };
-		fs.writeFileSync(defPath, `${JSON.stringify(updatedDef, null, 2)}\n`);
+		// Update this definition in the full list and save
+		const allDefs = loadDefinitions(projectRoot);
+		const idx = allDefs.findIndex((d) => d.id === def.id);
+		if (idx >= 0) {
+			allDefs[idx] = { ...def, decorations };
+		}
+		saveDefinitions(allDefs, projectRoot);
 		saveResolve();
 	});
 
@@ -133,6 +137,6 @@ export async function editCommand(options: EditOptions): Promise<void> {
 	await browser.close();
 
 	console.log(
-		chalk.bold.green(`\n✅ Saved ${savedCount} annotation(s) to ${defPath}\n`),
+		chalk.bold.green(`\n✅ Saved ${savedCount} annotation(s) for ${def.id}\n`),
 	);
 }

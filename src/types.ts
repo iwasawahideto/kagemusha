@@ -2,10 +2,6 @@ export interface KagemushaConfig {
 	app: {
 		baseUrl: string;
 	};
-	auth?: {
-		loginUrl: string;
-		steps: CaptureAction[];
-	};
 	screenshot: {
 		defaultViewport: Viewport;
 		defaultDiffThreshold: number;

@@ -6,6 +6,7 @@ import type {
 	KagemushaConfig,
 	ScreenshotDefinition,
 } from "../types.js";
+import { getAuthStatePath, hasAuthState } from "./auth.js";
 
 type Browser = import("playwright-chromium").Browser;
 type Page = import("playwright-chromium").Page;
@@ -62,13 +63,13 @@ async function createContext(
 	projectRoot: string,
 ): Promise<BrowserContext> {
 	const viewport = config.screenshot.defaultViewport;
-	const authStatePath = path.join(projectRoot, ".kagemusha", "auth-state.json");
-	const hasAuth = fs.existsSync(authStatePath);
 
 	const context = await browser.newContext({
 		viewport: { width: viewport.width, height: viewport.height },
 		deviceScaleFactor: viewport.deviceScaleFactor ?? 2,
-		...(hasAuth ? { storageState: authStatePath } : {}),
+		...(hasAuthState(projectRoot)
+			? { storageState: getAuthStatePath(projectRoot) }
+			: {}),
 	});
 
 	return context;

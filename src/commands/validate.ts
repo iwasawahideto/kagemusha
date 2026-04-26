@@ -49,7 +49,7 @@ export async function validateCommand(): Promise<void> {
 
 		if (definitions.length === 0) {
 			console.log(
-				chalk.yellow("  No definitions found in .kagemusha/definitions/"),
+				chalk.yellow("  No definitions found in .kagemusha/definitions.json"),
 			);
 		}
 	} catch (err) {
