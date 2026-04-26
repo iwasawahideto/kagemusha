@@ -179,7 +179,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 ```
 
-For apps that need login in CI, commit the `.kagemusha/auth/storageState.json` as a secret artifact or re-run `kagemusha login` locally and upload it as a workflow secret. (Plain auto-login via email/password is still on the roadmap.)
+For apps that need login in CI, run `kagemusha login` locally, base64-encode the resulting `.kagemusha/auth/storageState.json`, store it as a GitHub Secret (e.g. `KAGEMUSHA_STORAGE_STATE`), and decode it back into place in the workflow before `kagemusha run`. Do **not** commit the file. (Plain auto-login via email/password is still on the roadmap.)
 
 ## Try it locally
 
