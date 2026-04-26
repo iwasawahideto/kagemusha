@@ -4,7 +4,7 @@ import chalk from "chalk";
 import inquirer from "inquirer";
 import { stringify as toYaml } from "yaml";
 import { hasAuthState } from "../lib/auth.js";
-import { saveDefinitions } from "../lib/config.js";
+import { loadDefinitions, saveDefinitions } from "../lib/config.js";
 import { discoverPages } from "../lib/crawl.js";
 import { deriveIdFromPath } from "../lib/definition.js";
 import type { KagemushaConfig, ScreenshotDefinition } from "../types.js";
@@ -162,9 +162,38 @@ export async function initCommand(): Promise<void> {
 		}
 	}
 
-	const definitions: ScreenshotDefinition[] = selectedPaths.map((pagePath) => {
+	// Preserve existing definitions; merge new ones (skip ID duplicates)
+	const existing = loadDefinitions(cwd);
+	let merged: ScreenshotDefinition[] = existing;
+	let resetExisting = false;
+
+	if (existing.length > 0) {
+		const { keepExisting } = await inquirer.prompt<{ keepExisting: boolean }>({
+			type: "confirm",
+			name: "keepExisting",
+			message: `${existing.length} existing definition(s) found. Keep them and merge new selections?`,
+			default: true,
+		});
+		if (!keepExisting) {
+			console.log(
+				chalk.yellow(
+					`  ⚠ ${existing.length} existing definition(s) will be replaced.`,
+				),
+			);
+			merged = [];
+			resetExisting = true;
+		}
+	}
+
+	const existingIds = new Set(merged.map((d) => d.id));
+	let added = 0;
+	for (const pagePath of selectedPaths) {
 		const id = deriveIdFromPath(pagePath);
-		return {
+		if (existingIds.has(id)) {
+			console.log(chalk.gray(`  ↷ ${id} (already exists, skipped)`));
+			continue;
+		}
+		const def: ScreenshotDefinition = {
 			id,
 			name: id,
 			url: pagePath,
@@ -172,13 +201,14 @@ export async function initCommand(): Promise<void> {
 			hideElements: [],
 			decorations: [],
 		};
-	});
+		merged.push(def);
+		existingIds.add(id);
+		added++;
+		console.log(chalk.green(`  ✓ ${id}`));
+	}
 
-	if (definitions.length > 0) {
-		saveDefinitions(definitions, cwd);
-		for (const d of definitions) {
-			console.log(chalk.green(`  ✓ ${d.id}`));
-		}
+	if (added > 0 || resetExisting) {
+		saveDefinitions(merged, cwd);
 	}
 	console.log("");
 
@@ -236,10 +266,19 @@ jobs:
       - run: npm ci
       - run: npx playwright install chromium
 
+      # If your app needs login: run 'kagemusha login' locally,
+      # then 'base64 -i .kagemusha/auth-state.json | pbcopy' and store it
+      # as the KAGEMUSHA_STORAGE_STATE secret. Skip this step if not needed.
+      - name: Restore login session
+        if: env.KAGEMUSHA_STORAGE_STATE != ''
+        run: |
+          mkdir -p .kagemusha
+          echo "$KAGEMUSHA_STORAGE_STATE" | base64 --decode > .kagemusha/auth-state.json
+        env:
+          KAGEMUSHA_STORAGE_STATE: \${{ secrets.KAGEMUSHA_STORAGE_STATE }}
+
       - run: npx kagemusha run
         env:
-          KAGEMUSHA_DEMO_EMAIL: \${{ secrets.KAGEMUSHA_DEMO_EMAIL }}
-          KAGEMUSHA_DEMO_PASSWORD: \${{ secrets.KAGEMUSHA_DEMO_PASSWORD }}
           AWS_ACCESS_KEY_ID: \${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: \${{ secrets.AWS_SECRET_ACCESS_KEY }}
 `;

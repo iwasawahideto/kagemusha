@@ -7,7 +7,6 @@ import {
 import { deriveIdFromPath } from "../lib/definition.js";
 
 interface AddOptions {
-	capture?: string;
 	id?: string;
 }
 
