@@ -7,9 +7,10 @@ The shadow warrior for your documentation.
 
 When you push code, Kagemusha automatically captures screenshots of your app and uploads them to S3. No more manually taking screenshots and updating help articles.
 
-- **Auto-discover pages** — Crawls your app to find pages, select which ones to capture
-- **Playwright-powered** — Supports login, click actions, element selection, and full-page capture
-- **Annotations** — Add arrows, rectangles, and labels to screenshots
+- **Auto-discover pages** — Crawls your app (SPA routes included) and lets you pick which ones to capture
+- **Login once** — Logs in via browser and reuses the session (`storageState`) for all captures
+- **Playwright-powered** — Full-page / element / crop capture, pre-capture actions, element hiding
+- **Visual editor** — Draw rectangles, arrows, and labels; also pick capture range by hovering / dragging
 - **S3 upload** — Screenshots are uploaded with stable URLs for embedding in help centers
 - **Local mode** — Save screenshots locally for review before uploading
 - **GitHub Actions ready** — Runs on every merge to main
@@ -20,65 +21,138 @@ When you push code, Kagemusha automatically captures screenshots of your app and
 # Install
 npm install -D @wasao/kagemusha
 
-# Interactive setup (generates config, discovers pages, creates workflow)
+# Interactive setup: config → login → discover pages → workflow
 npx kagemusha init
 
-# Preview screenshots locally
-npx kagemusha preview
+# Capture screenshots locally
+npx kagemusha capture --all
 
 # Run full pipeline (capture → upload)
 npx kagemusha run
 ```
 
-## How it works
+## Workflow
 
-1. `npx kagemusha init` scans your app and lets you pick which pages to screenshot
-2. Config and definition files are generated in your repo
-3. On every merge to main, GitHub Actions runs `npx kagemusha run`
-4. Screenshots are captured and uploaded to S3
-5. Help center articles reference the S3 URLs — images stay up to date automatically
+### 1. First-time setup — `init`
+
+```bash
+npx kagemusha init
+```
+
+Walks you through:
+
+1. **Config** — target base URL and save destination (local / S3)
+2. **Login** — if the app requires auth, opens a browser so you can sign in manually. The session is saved to `.kagemusha/auth/storageState.json` and reused afterwards.
+3. **Discover** — crawls the app (clicks nav links + BFS on `<a>`) and shows a checklist of found pages
+4. **Workflow** — optionally generates `.github/workflows/kagemusha.yml`
+
+Produces:
+
+```
+kagemusha.config.yaml         # base URL, viewport, publish destination
+.kagemusha/definitions.json   # one entry per screenshot
+.kagemusha/auth/              # saved login state (git-ignored)
+.github/workflows/kagemusha.yml
+```
+
+### 2. Adding pages later
+
+| Command | Use when |
+|---------|----------|
+| `npx kagemusha discover` | Re-crawl and pick up newly added routes |
+| `npx kagemusha add <path>` | Add a single page manually, e.g. `npx kagemusha add /settings` |
+| `npx kagemusha add <path> --id custom-id` | Add a second variant of the same page with a custom ID |
+| `npx kagemusha login` | Refresh the login session (run if you get redirected to the login page during capture) |
+| `npx kagemusha list` | Inspect the current definitions, grouped by URL |
+
+One page can have multiple screenshots — use `add` with `--id` to stack states (e.g. `dashboard-empty`, `dashboard-with-data`).
+
+### 3. Editing capture range + annotations — `edit`
+
+```bash
+npx kagemusha edit --id dashboard
+```
+
+Opens the real page in a Playwright browser with a toolbar overlay. Two groups of tools:
+
+**Capture** — what area to screenshot
+- **📷 Full** — capture the whole page (default)
+- **🎯 Element** — hover to outline elements, click to pick one; the generated selector is shown in an editable text field
+- **✂️ Crop** — drag a rectangle on the page; re-drag to replace
+
+**Annotate** — decorations drawn on top of the captured image
+- **▭ Rect / → Arrow / T Label** — drag or click to place; drag existing ones to move; Delete to remove
+
+Hit **💾 Save** — both capture and decorations are written back to `.kagemusha/definitions.json`. The same editor restores everything on next open, so adjusting is iterative.
+
+### 4. Capture & publish
+
+```bash
+npx kagemusha capture --all           # capture everything
+npx kagemusha capture --ids a,b,c     # capture specific IDs
+npx kagemusha capture --ids a --open  # open the result locally after capture
+npx kagemusha run                     # capture + upload (uses config.publish)
+```
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `kagemusha init` | Interactive setup |
-| `kagemusha run` | Full pipeline: capture + upload |
+| `kagemusha init` | Interactive setup (config + login + discover + workflow) |
+| `kagemusha login` | Open browser and save login session |
+| `kagemusha discover` | Re-crawl the app and add newly found pages |
+| `kagemusha add <path>` | Add a single screenshot definition |
+| `kagemusha list` | List all definitions, grouped by URL |
+| `kagemusha edit --id <id>` | Open the visual editor (capture range + annotations) |
 | `kagemusha capture` | Capture screenshots only |
-| `kagemusha preview` | Preview in browser |
-| `kagemusha validate` | Validate config files |
+| `kagemusha run` | Full pipeline: capture + upload |
+| `kagemusha validate` | Validate config and definition files |
 | `kagemusha compare` | VRT diff detection (coming soon) |
-| `kagemusha publish` | Publish to Intercom/Zendesk (coming soon) |
+| `kagemusha publish` | Publish to Intercom / Zendesk (coming soon) |
 
-## Config
+## Definition example
 
-`kagemusha init` generates these files:
-
-```
-kagemusha.config.yaml         # App URL, auth, save destination
-.kagemusha/definitions.json   # All screenshot definitions
-```
-
-### Screenshot definition example
+`.kagemusha/definitions.json` is an array of definitions:
 
 ```json
-{
-  "id": "dashboard",
-  "name": "dashboard",
-  "url": "/dashboard",
-  "capture": { "mode": "fullPage" },
-  "hideElements": [".intercom-launcher"],
-  "decorations": [
-    {
-      "type": "rect",
-      "target": { "x": 32, "y": 120, "width": 310, "height": 120 },
-      "style": { "color": "#FF0000", "strokeWidth": 2 }
-    }
-  ]
-}
+[
+  {
+    "id": "dashboard",
+    "name": "dashboard",
+    "url": "/dashboard",
+    "capture": { "mode": "fullPage" },
+    "hideElements": [".intercom-launcher"],
+    "decorations": [
+      {
+        "type": "rect",
+        "target": { "x": 32, "y": 120, "width": 310, "height": 120 },
+        "style": { "color": "#FF0000", "strokeWidth": 2 }
+      }
+    ]
+  },
+  {
+    "id": "dashboard-card",
+    "url": "/dashboard",
+    "capture": { "mode": "selector", "selector": "[data-testid=summary-card]" },
+    "decorations": []
+  },
+  {
+    "id": "dashboard-hero",
+    "url": "/dashboard",
+    "capture": {
+      "mode": "crop",
+      "crop": { "start": { "x": 0, "y": 0 }, "end": { "x": 1280, "y": 400 } }
+    },
+    "decorations": []
+  }
+]
 ```
 
+You normally won't edit this by hand — `discover` / `add` / `edit` write it for you.
+
 ## GitHub Actions
+
+`init` generates a workflow like this:
 
 ```yaml
 name: Kagemusha
@@ -86,10 +160,11 @@ on:
   pull_request:
     types: [closed]
     branches: [main]
+  workflow_dispatch:
 
 jobs:
-  screenshots:
-    if: github.event.pull_request.merged == true
+  update-screenshots:
+    if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -97,11 +172,14 @@ jobs:
         with:
           node-version: 20
       - run: npm ci
+      - run: npx playwright install chromium
       - run: npx kagemusha run
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 ```
+
+For apps that need login in CI, commit the `.kagemusha/auth/storageState.json` as a secret artifact or re-run `kagemusha login` locally and upload it as a workflow secret. (Plain auto-login via email/password is still on the roadmap.)
 
 ## Try it locally
 
@@ -110,7 +188,7 @@ cd example
 bun install
 bun run serve          # Start sample app
 bunx kagemusha init    # Set up kagemusha
-bunx kagemusha preview # See screenshots
+bunx kagemusha capture --all --open
 ```
 
 ## Roadmap
@@ -118,7 +196,9 @@ bunx kagemusha preview # See screenshots
 - [x] Screenshot capture with Playwright
 - [x] Annotations (rect, arrow, label)
 - [x] S3 upload
-- [x] Auto-discover pages
+- [x] Auto-discover pages (SPA-aware BFS crawl)
+- [x] Login via browser (`storageState`)
+- [x] Visual editor for capture range (fullPage / selector / crop)
 - [ ] Visual regression testing (VRT)
 - [ ] Intercom / Zendesk integration
 - [ ] AI-powered text updates

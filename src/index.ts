@@ -7,6 +7,7 @@ import { captureCommand } from "./commands/capture.js";
 import { discoverCommand } from "./commands/discover.js";
 import { editCommand } from "./commands/edit.js";
 import { initCommand } from "./commands/init.js";
+import { listCommand } from "./commands/list.js";
 import { loginCommand } from "./commands/login.js";
 import { runCommand } from "./commands/run.js";
 import { validateCommand } from "./commands/validate.js";
@@ -56,6 +57,11 @@ program
 	.command("discover")
 	.description("Auto-discover pages by crawling your app")
 	.action(discoverCommand);
+
+program
+	.command("list")
+	.description("List current screenshot definitions")
+	.action(listCommand);
 
 program
 	.command("run")

@@ -8,6 +8,7 @@ import {
 	loadDefinitions,
 	saveDefinitions,
 } from "../lib/config.js";
+import type { ScreenshotDefinition } from "../types.js";
 
 interface EditOptions {
 	id?: string;
@@ -87,14 +88,21 @@ export async function editCommand(options: EditOptions): Promise<void> {
 	});
 
 	// Expose save function BEFORE injecting script
-	await page.exposeFunction("__kagemusha_save", (decorationsJson: string) => {
-		const decorations = JSON.parse(decorationsJson);
-		savedCount = decorations.length;
+	await page.exposeFunction("__kagemusha_save", (payloadJson: string) => {
+		const payload = JSON.parse(payloadJson) as {
+			decorations: ScreenshotDefinition["decorations"];
+			capture: ScreenshotDefinition["capture"];
+		};
+		savedCount = payload.decorations?.length ?? 0;
 		// Update this definition in the full list and save
 		const allDefs = loadDefinitions(projectRoot);
 		const idx = allDefs.findIndex((d) => d.id === def.id);
 		if (idx >= 0) {
-			allDefs[idx] = { ...def, decorations };
+			allDefs[idx] = {
+				...def,
+				decorations: payload.decorations,
+				capture: payload.capture,
+			};
 		}
 		saveDefinitions(allDefs, projectRoot);
 		saveResolve();
@@ -120,6 +128,15 @@ export async function editCommand(options: EditOptions): Promise<void> {
 			).__kagemusha_loadAnnotations(decs);
 		}, def.decorations);
 	}
+
+	// Load existing capture config
+	await page.evaluate((cap) => {
+		(
+			window as unknown as {
+				__kagemusha_loadCapture: (c: unknown) => void;
+			}
+		).__kagemusha_loadCapture(cap);
+	}, def.capture);
 
 	console.log(
 		chalk.blue("🎨 Editor ready. Draw annotations, then click Save.\n"),
