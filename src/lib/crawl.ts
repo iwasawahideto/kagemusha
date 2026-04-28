@@ -78,14 +78,15 @@ export const discoverPages = async (
 		}
 
 		// Add start page to results
+		const startPage = await context.newPage();
+		let sessionExpired = false;
 		try {
-			const page = await context.newPage();
-			await page.goto(startUrl, {
+			await startPage.goto(startUrl, {
 				waitUntil: "networkidle",
 				timeout: 60000,
 			});
-			const title = await page.title();
-			const pagePath = new URL(page.url()).pathname;
+			const title = await startPage.title();
+			const pagePath = new URL(startPage.url()).pathname;
 
 			// Detect expired session
 			if (loginPath && pagePath === loginPath) {
@@ -94,31 +95,37 @@ export const discoverPages = async (
 						`\n⚠ Redirected to ${loginPath} — session expired? Run "kagemusha login" first.\n`,
 					),
 				);
-				await page.close();
-				await browser.close();
-				return results;
-			}
+				sessionExpired = true;
+			} else {
+				const startPattern = toPattern(pagePath);
+				seenPatterns.add(startPattern);
+				results.push({ path: pagePath, title: title || pagePath });
+				console.log(
+					chalk.gray(`  ${pagePath}`) +
+						`  ${chalk.green("✓")} ${chalk.white(title)}`,
+				);
 
-			const startPattern = toPattern(pagePath);
-			seenPatterns.add(startPattern);
-			results.push({ path: pagePath, title: title || pagePath });
+				// Collect <a href> links from start page
+				const links = await collectLinks(startPage, origin);
+				for (const link of links) {
+					if (visited.has(link)) continue;
+					const linkPattern = toPattern(new URL(link).pathname);
+					if (seenPatterns.has(linkPattern)) continue;
+					queue.push({ url: link, depth: 1 });
+				}
+			}
+		} catch (e) {
 			console.log(
-				chalk.gray(`  ${pagePath}`) +
-					`  ${chalk.green("✓")} ${chalk.white(title)}`,
+				chalk.yellow(
+					`\n⚠ Start page failed: ${e instanceof Error ? e.message : e}. Continuing with nav-discovered URLs.\n`,
+				),
 			);
+		} finally {
+			await startPage.close().catch(() => {});
+		}
 
-			// Collect <a href> links from start page
-			const links = await collectLinks(page, origin);
-			for (const link of links) {
-				if (visited.has(link)) continue;
-				const linkPattern = toPattern(new URL(link).pathname);
-				if (seenPatterns.has(linkPattern)) continue;
-				queue.push({ url: link, depth: 1 });
-			}
-
-			await page.close();
-		} catch {
-			// start page failed, continue with nav-discovered URLs
+		if (sessionExpired) {
+			return results;
 		}
 
 		// Phase 2: BFS crawl from discovered URLs
@@ -144,11 +151,10 @@ export const discoverPages = async (
 			visited.add(normalized);
 
 			const urlPath = new URL(normalized).pathname;
+			process.stdout.write(chalk.gray(`  ${urlPath}`));
 
+			const page = await context.newPage();
 			try {
-				process.stdout.write(chalk.gray(`  ${urlPath}`));
-
-				const page = await context.newPage();
 				await page.goto(normalized, {
 					waitUntil: "networkidle",
 					timeout: 60000,
@@ -161,7 +167,6 @@ export const discoverPages = async (
 				const finalPattern = toPattern(pagePath);
 				if (finalPattern !== pattern && seenPatterns.has(finalPattern)) {
 					process.stdout.write(chalk.gray(" (skip)\n"));
-					await page.close();
 					continue;
 				}
 				seenPatterns.add(finalPattern);
@@ -182,10 +187,10 @@ export const discoverPages = async (
 						queue.push({ url: link, depth: item.depth + 1 });
 					}
 				}
-
-				await page.close();
 			} catch {
 				process.stdout.write(chalk.yellow(" (timeout, skip)\n"));
+			} finally {
+				await page.close().catch(() => {});
 			}
 		}
 
@@ -199,7 +204,10 @@ export const discoverPages = async (
 	return results;
 };
 
-// Click nav/sidebar link elements and collect URLs they navigate to
+// Click nav/sidebar link elements and collect URLs they navigate to.
+// We collect accessible names (text || aria-label) up front, then re-resolve
+// each label by name on every iteration so SPA re-renders don't cause us
+// to click the wrong element.
 const discoverByClicking = async (
 	context: BrowserContext,
 	startUrl: string,
@@ -207,73 +215,91 @@ const discoverByClicking = async (
 	loginPath: string,
 ): Promise<string[]> => {
 	const page = await context.newPage();
-	await page.goto(startUrl, { waitUntil: "networkidle", timeout: 60000 });
+	try {
+		await page.goto(startUrl, { waitUntil: "networkidle", timeout: 60000 });
 
-	// Check if redirected to login
-	if (loginPath && new URL(page.url()).pathname === loginPath) {
-		await page.close();
-		return [];
-	}
-
-	// Use getByRole to find link elements inside navigation landmarks + page-wide links
-	const navLinks = page.getByRole("navigation").getByRole("link");
-	const allLinks = page.getByRole("link");
-
-	// Deduplicate: nav links first, then remaining page links
-	const seen = new Set<string>();
-	const targets: { locator: ReturnType<Page["getByRole"]>; index: number }[] =
-		[];
-
-	for (const source of [navLinks, allLinks]) {
-		const count = await source.count();
-		for (let i = 0; i < count; i++) {
-			const text = ((await source.nth(i).textContent()) ?? "").trim();
-			if (!text || seen.has(text)) continue;
-			seen.add(text);
-			targets.push({ locator: source, index: i });
+		// Check if redirected to login
+		if (loginPath && new URL(page.url()).pathname === loginPath) {
+			return [];
 		}
-	}
 
-	console.log(chalk.gray(`  Found ${targets.length} link elements to try\n`));
+		// Collect accessible labels for nav links first, then page-wide links.
+		const candidates: { name: string; preferNav: boolean }[] = [];
+		const seen = new Set<string>();
 
-	const discoveredUrls: string[] = [];
-
-	for (const target of targets) {
-		try {
-			const el = target.locator.nth(target.index);
-			if (!(await el.isVisible())) continue;
-
-			const beforeUrl = page.url();
-			await el.click({ timeout: 3000 });
-			await page
-				.waitForLoadState("networkidle", { timeout: 5000 })
-				.catch(() => {});
-			await page.waitForTimeout(500);
-
-			const afterUrl = page.url();
-
-			if (afterUrl !== beforeUrl && new URL(afterUrl).origin === origin) {
-				const afterPath = new URL(afterUrl).pathname;
-				if (afterPath !== loginPath) {
-					const text = ((await el.textContent()) ?? "").trim();
-					discoveredUrls.push(afterUrl);
-					console.log(
-						chalk.green(`  + ${afterPath}`) + chalk.gray(`  ${text}`),
-					);
+		// Use accessible name (text || aria-label) so getByRole({ name }) can
+		// resolve the element again on click. Other attributes don't participate
+		// in accessible name and would be unreachable.
+		const collectLabels = async (
+			locator: ReturnType<Page["getByRole"]>,
+			preferNav: boolean,
+		) => {
+			const count = await locator.count();
+			for (let i = 0; i < count; i++) {
+				const el = locator.nth(i);
+				let name = ((await el.textContent().catch(() => null)) ?? "").trim();
+				if (!name) {
+					name = (
+						(await el.getAttribute("aria-label").catch(() => null)) ?? ""
+					).trim();
 				}
-
-				await page.goto(startUrl, {
-					waitUntil: "networkidle",
-					timeout: 10000,
-				});
+				if (!name || seen.has(name)) continue;
+				seen.add(name);
+				candidates.push({ name, preferNav });
 			}
-		} catch {
-			// Skip elements that can't be clicked
-		}
-	}
+		};
 
-	await page.close();
-	return discoveredUrls;
+		await collectLabels(page.getByRole("navigation").getByRole("link"), true);
+		await collectLabels(page.getByRole("link"), false);
+
+		console.log(
+			chalk.gray(`  Found ${candidates.length} link label(s) to try\n`),
+		);
+
+		const discoveredUrls: string[] = [];
+
+		for (const { name, preferNav } of candidates) {
+			try {
+				const root = preferNav
+					? page
+							.getByRole("navigation")
+							.getByRole("link", { name, exact: true })
+					: page.getByRole("link", { name, exact: true });
+				const el = root.first();
+				if (!(await el.isVisible().catch(() => false))) continue;
+
+				const beforeUrl = page.url();
+				await el.click({ timeout: 3000 });
+				await page
+					.waitForLoadState("networkidle", { timeout: 5000 })
+					.catch(() => {});
+				await page.waitForTimeout(500);
+
+				const afterUrl = page.url();
+
+				if (afterUrl !== beforeUrl && new URL(afterUrl).origin === origin) {
+					const afterPath = new URL(afterUrl).pathname;
+					if (afterPath !== loginPath) {
+						discoveredUrls.push(afterUrl);
+						console.log(
+							chalk.green(`  + ${afterPath}`) + chalk.gray(`  ${name}`),
+						);
+					}
+
+					await page.goto(startUrl, {
+						waitUntil: "networkidle",
+						timeout: 10000,
+					});
+				}
+			} catch {
+				// Skip elements that can't be clicked or text didn't resolve
+			}
+		}
+
+		return discoveredUrls;
+	} finally {
+		await page.close().catch(() => {});
+	}
 };
 
 // Replace numeric IDs, UUIDs, and hex strings with * to detect same-structure URLs

@@ -44,13 +44,10 @@ program
 
 program
 	.command("add <path>")
-	.description("Add a screenshot definition for a page path")
-	.option("--id <id>", "Custom definition ID (auto-suffixed if exists)")
-	.option(
-		"--capture <mode>",
-		"Capture mode: fullPage, selector, crop",
-		"fullPage",
+	.description(
+		"Add a screenshot definition (defaults to fullPage; use 'edit' to change capture range)",
 	)
+	.option("--id <id>", "Custom definition ID (auto-suffixed if exists)")
 	.action(addCommand);
 
 program

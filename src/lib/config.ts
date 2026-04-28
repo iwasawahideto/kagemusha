@@ -87,7 +87,15 @@ function resolveEnvVars(obj: unknown): void {
 			if (typeof value === "string") {
 				(obj as Record<string, unknown>)[key] = value.replace(
 					/\$\{(\w+)\}/g,
-					(_, envVar: string) => process.env[envVar] ?? "",
+					(_, envVar: string) => {
+						const v = process.env[envVar];
+						if (v === undefined) {
+							throw new Error(
+								`Environment variable \${${envVar}} is referenced in kagemusha.config.yaml but not set.`,
+							);
+						}
+						return v;
+					},
 				);
 			} else if (typeof value === "object") {
 				resolveEnvVars(value);

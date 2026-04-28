@@ -50,6 +50,21 @@ export const loginCommand = async (): Promise<void> => {
 	const landingUrl = page.url();
 	const landingPath = new URL(landingUrl).pathname;
 
+	if (landingPath === loginPath) {
+		console.log(
+			chalk.yellow(
+				`\n⚠ Still on ${loginPath} — looks like login wasn't completed.`,
+			),
+		);
+		console.log(
+			chalk.yellow(
+				"  Session not saved. Re-run 'kagemusha login' after signing in.\n",
+			),
+		);
+		await browser.close();
+		return;
+	}
+
 	// Save session state
 	const authStatePath = getAuthStatePath(projectRoot);
 	fs.mkdirSync(path.dirname(authStatePath), { recursive: true });
