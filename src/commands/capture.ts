@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import chalk from "chalk";
 import { annotateScreenshots } from "../lib/annotate.js";
 import { findProjectRoot, loadConfig, loadDefinitions } from "../lib/config.js";
@@ -7,6 +8,24 @@ interface CaptureOptions {
 	ids?: string;
 	open?: boolean;
 }
+
+// Open a file with the OS's default viewer (Preview on macOS, etc.).
+// `detached + unref` lets the kagemusha process exit while the viewer keeps
+// running.
+const openInDefaultApp = (filePath: string): void => {
+	const cmd =
+		process.platform === "darwin"
+			? "open"
+			: process.platform === "win32"
+				? "start"
+				: "xdg-open";
+	const args = process.platform === "win32" ? ["", filePath] : [filePath];
+	spawn(cmd, args, {
+		detached: true,
+		stdio: "ignore",
+		shell: process.platform === "win32",
+	}).unref();
+};
 
 export async function captureCommand(options: CaptureOptions): Promise<void> {
 	console.log(chalk.bold("\n🥷 Kagemusha — Capture screenshots\n"));
@@ -46,16 +65,8 @@ export async function captureCommand(options: CaptureOptions): Promise<void> {
 	}
 
 	if (options.open) {
-		const { chromium } = await import("playwright-chromium");
-		const browser = await chromium.launch({ headless: false });
-		const context = await browser.newContext();
-
 		for (const result of annotated) {
-			const page = await context.newPage();
-			await page.goto(`file://${result.annotatedPath}`);
+			openInDefaultApp(result.annotatedPath);
 		}
-
-		console.log(chalk.gray("\nPress Ctrl+C to close preview.\n"));
-		await new Promise(() => {});
 	}
 }
