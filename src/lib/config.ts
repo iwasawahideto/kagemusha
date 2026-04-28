@@ -123,11 +123,8 @@ export function validateDefinition(def: ScreenshotDefinition): string[] {
 	if (!def.id) errors.push("id is required");
 	if (!def.url) errors.push("url is required");
 	if (!def.capture) errors.push("capture is required");
-	if (
-		def.capture &&
-		!["fullPage", "selector", "crop"].includes(def.capture.mode)
-	) {
-		errors.push(`capture.mode must be "fullPage", "selector", or "crop"`);
+	if (def.capture && !["fullPage", "crop"].includes(def.capture.mode)) {
+		errors.push(`capture.mode must be "fullPage" or "crop"`);
 	}
 
 	return errors;

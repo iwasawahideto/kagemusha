@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import chalk from "chalk";
 import type { BrowserContext, Page } from "playwright-chromium";
-import { getAuthMetaPath, getAuthStatePath, hasAuthState } from "./auth.js";
+import { authContextOptions, getAuthMetaPath } from "./auth.js";
 
 export interface DiscoveredPage {
 	path: string;
@@ -17,13 +17,7 @@ export const discoverPages = async (
 	const { chromium } = await import("playwright-chromium");
 	const browser = await chromium.launch({ headless: true });
 
-	const hasAuth = projectRoot ? hasAuthState(projectRoot) : false;
-
-	const context = await browser.newContext(
-		hasAuth && projectRoot
-			? { storageState: getAuthStatePath(projectRoot) }
-			: {},
-	);
+	const context = await browser.newContext(authContextOptions(projectRoot));
 
 	const origin = new URL(baseUrl).origin;
 	const visited = new Set<string>();

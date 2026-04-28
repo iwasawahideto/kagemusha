@@ -47,7 +47,7 @@ export async function runCommand(options: RunOptions): Promise<void> {
 	const annotatedResults = await annotateScreenshots(
 		definitions,
 		captureResults,
-		projectRoot,
+		config,
 	);
 	console.log(
 		chalk.green(`  ✓ Annotated ${annotatedResults.length} screenshot(s)\n`),

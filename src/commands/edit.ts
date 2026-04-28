@@ -2,12 +2,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import chalk from "chalk";
+import { defaultContextOptions } from "../lib/auth.js";
 import {
 	findProjectRoot,
 	loadConfig,
 	loadDefinitions,
 	saveDefinitions,
 } from "../lib/config.js";
+import type { ScreenshotDefinition } from "../types.js";
 
 interface EditOptions {
 	id?: string;
@@ -52,12 +54,9 @@ export async function editCommand(options: EditOptions): Promise<void> {
 
 	const { chromium } = await import("playwright-chromium");
 	const browser = await chromium.launch({ headless: false });
-	const context = await browser.newContext({
-		viewport: {
-			width: config.screenshot.defaultViewport.width,
-			height: config.screenshot.defaultViewport.height,
-		},
-	});
+	const context = await browser.newContext(
+		defaultContextOptions(config, projectRoot),
+	);
 	const page = await context.newPage();
 
 	const urlPath = def.url.replace(
@@ -87,26 +86,28 @@ export async function editCommand(options: EditOptions): Promise<void> {
 	});
 
 	// Expose save function BEFORE injecting script
-	await page.exposeFunction("__kagemusha_save", (decorationsJson: string) => {
-		const decorations = JSON.parse(decorationsJson);
-		savedCount = decorations.length;
+	await page.exposeFunction("__kagemusha_save", (payloadJson: string) => {
+		const payload = JSON.parse(payloadJson) as {
+			decorations: ScreenshotDefinition["decorations"];
+			capture: ScreenshotDefinition["capture"];
+		};
+		savedCount = payload.decorations?.length ?? 0;
 		// Update this definition in the full list and save
 		const allDefs = loadDefinitions(projectRoot);
 		const idx = allDefs.findIndex((d) => d.id === def.id);
 		if (idx >= 0) {
-			allDefs[idx] = { ...def, decorations };
+			allDefs[idx] = {
+				...def,
+				decorations: payload.decorations,
+				capture: payload.capture,
+			};
 		}
 		saveDefinitions(allDefs, projectRoot);
 		saveResolve();
 	});
 
-	// Set dpr BEFORE injecting script
-	const dpr = config.screenshot.defaultViewport.deviceScaleFactor ?? 2;
-	await page.evaluate((d) => {
-		(window as unknown as { __kagemusha_dpr: number }).__kagemusha_dpr = d;
-	}, dpr);
-
-	// Inject editor script and wait for it to fully load
+	// Inject editor script — DPR is read from window.devicePixelRatio inside,
+	// which matches the value set on the browser context above.
 	const editorScript = loadEditorScript();
 	await page.evaluate(editorScript);
 
@@ -120,6 +121,15 @@ export async function editCommand(options: EditOptions): Promise<void> {
 			).__kagemusha_loadAnnotations(decs);
 		}, def.decorations);
 	}
+
+	// Load existing capture config
+	await page.evaluate((cap) => {
+		(
+			window as unknown as {
+				__kagemusha_loadCapture: (c: unknown) => void;
+			}
+		).__kagemusha_loadCapture(cap);
+	}, def.capture);
 
 	console.log(
 		chalk.blue("🎨 Editor ready. Draw annotations, then click Save.\n"),

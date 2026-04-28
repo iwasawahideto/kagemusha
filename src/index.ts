@@ -7,6 +7,7 @@ import { captureCommand } from "./commands/capture.js";
 import { discoverCommand } from "./commands/discover.js";
 import { editCommand } from "./commands/edit.js";
 import { initCommand } from "./commands/init.js";
+import { listCommand } from "./commands/list.js";
 import { loginCommand } from "./commands/login.js";
 import { runCommand } from "./commands/run.js";
 import { validateCommand } from "./commands/validate.js";
@@ -55,6 +56,11 @@ program
 	.action(discoverCommand);
 
 program
+	.command("list")
+	.description("List current screenshot definitions")
+	.action(listCommand);
+
+program
 	.command("run")
 	.description("Run full pipeline: capture → upload to S3")
 	.option("--ids <ids>", "Comma-separated screenshot definition IDs")
@@ -62,10 +68,12 @@ program
 
 program
 	.command("capture")
-	.description("Capture screenshots only")
+	.description("Capture screenshots (all definitions if --ids is omitted)")
 	.option("--ids <ids>", "Comma-separated screenshot definition IDs")
-	.option("--all", "Capture all definitions")
-	.option("--open", "Open screenshots in browser after capture")
+	.option(
+		"--open",
+		"Open screenshots in the system default viewer (Preview / xdg-open / start)",
+	)
 	.action(captureCommand);
 
 program

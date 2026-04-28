@@ -6,7 +6,7 @@ import type {
 	KagemushaConfig,
 	ScreenshotDefinition,
 } from "../types.js";
-import { getAuthStatePath, hasAuthState } from "./auth.js";
+import { defaultContextOptions } from "./auth.js";
 
 type Browser = import("playwright-chromium").Browser;
 type Page = import("playwright-chromium").Page;
@@ -62,17 +62,7 @@ async function createContext(
 	config: KagemushaConfig,
 	projectRoot: string,
 ): Promise<BrowserContext> {
-	const viewport = config.screenshot.defaultViewport;
-
-	const context = await browser.newContext({
-		viewport: { width: viewport.width, height: viewport.height },
-		deviceScaleFactor: viewport.deviceScaleFactor ?? 2,
-		...(hasAuthState(projectRoot)
-			? { storageState: getAuthStatePath(projectRoot) }
-			: {}),
-	});
-
-	return context;
+	return browser.newContext(defaultContextOptions(config, projectRoot));
 }
 
 async function captureOne(
@@ -126,19 +116,6 @@ async function takeScreenshot(
 			await page.screenshot({ path: outputPath, fullPage: true });
 			break;
 
-		case "selector": {
-			const element = await page.waitForSelector(def.capture.selector, {
-				timeout: 10000,
-			});
-			if (!element) {
-				throw new Error(
-					`Element not found: ${def.capture.selector} (definition: ${def.id})`,
-				);
-			}
-			await element.screenshot({ path: outputPath });
-			break;
-		}
-
 		case "crop": {
 			const { start, end } = def.capture.crop;
 			await page.screenshot({
@@ -151,6 +128,14 @@ async function takeScreenshot(
 				},
 			});
 			break;
+		}
+
+		default: {
+			// Backward-compat: legacy "selector" mode (now removed) — fall back to fullPage
+			console.warn(
+				`  ⚠ ${def.id}: unknown capture mode "${(def.capture as { mode: string }).mode}", falling back to fullPage.`,
+			);
+			await page.screenshot({ path: outputPath, fullPage: true });
 		}
 	}
 }

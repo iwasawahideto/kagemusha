@@ -4,9 +4,9 @@
 
 // Type helpers for window properties set by edit.ts
 const _win = window as unknown as {
-	__kagemusha_dpr: number;
-	__kagemusha_save: (decorationsJson: string) => void;
+	__kagemusha_save: (payloadJson: string) => void;
 	__kagemusha_loadAnnotations: (decorations: Decoration[]) => void;
+	__kagemusha_loadCapture: (capture: CaptureSpec) => void;
 };
 
 interface Decoration {
@@ -23,6 +23,13 @@ interface Decoration {
 		background?: string;
 	};
 }
+
+type CaptureSpec =
+	| { mode: "fullPage" }
+	| {
+			mode: "crop";
+			crop: { start: { x: number; y: number }; end: { x: number; y: number } };
+	  };
 
 interface Annotation {
 	id: string;
@@ -48,7 +55,8 @@ interface DragState {
 	lastY?: number;
 }
 
-const TOOLBAR_HEIGHT = 48;
+const TOOLBAR_HEIGHT_FALLBACK = 48;
+let toolbarHeight = TOOLBAR_HEIGHT_FALLBACK;
 const svgNS = "http://www.w3.org/2000/svg";
 
 let tool = "rect";
@@ -57,6 +65,14 @@ let selectedId: string | null = null;
 let dragState: DragState | null = null;
 let nextId = 1;
 
+// Capture state — persisted on save (in page CSS pixels, NOT DPR-scaled)
+let captureMode: "fullPage" | "crop" = "fullPage";
+let captureCrop: { x: number; y: number; w: number; h: number } | null = null;
+let cropDragState: {
+	sx: number;
+	sy: number;
+} | null = null;
+
 // --- TOOLBAR ---
 const toolbar = document.createElement("div");
 toolbar.id = "kagemusha-toolbar";
@@ -64,17 +80,20 @@ toolbar.innerHTML = `
   <style>
     #kagemusha-toolbar {
       position: fixed; top: 0; left: 0; right: 0; z-index: 999999;
-      background: #16213e; padding: 8px 16px; display: flex; align-items: center; gap: 12px;
+      background: #16213e; padding: 8px 16px; display: flex; align-items: center; gap: 10px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.3); font-family: -apple-system, sans-serif;
+      flex-wrap: nowrap; overflow-x: auto;
     }
     #kagemusha-toolbar button {
-      padding: 6px 14px; border: 1px solid #444; border-radius: 6px;
+      padding: 6px 12px; border: 1px solid #444; border-radius: 6px;
       background: #1a1a2e; color: #fff; font-size: 13px; cursor: pointer;
     }
     #kagemusha-toolbar button:hover { background: #2a2a4e; }
     #kagemusha-toolbar button.active { background: #6366f1; border-color: #6366f1; }
+    #kagemusha-toolbar button.cap-btn.active { background: #0ea5e9; border-color: #0ea5e9; }
     #kagemusha-toolbar .sep { width: 1px; height: 24px; background: #444; }
     #kagemusha-toolbar .title { color: #888; font-size: 13px; }
+    #kagemusha-toolbar .group-label { color: #7a89b0; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; margin-right: -4px; }
     #kagemusha-toolbar .save-btn { background: #22c55e; border-color: #22c55e; font-weight: 600; margin-left: auto; }
     #kagemusha-toolbar .save-btn:hover { background: #16a34a; }
     #kagemusha-svg-layer {
@@ -82,16 +101,24 @@ toolbar.innerHTML = `
       z-index: 999998; pointer-events: none;
     }
     #kagemusha-svg-layer.drawing { pointer-events: auto; cursor: crosshair; }
+    #kagemusha-svg-layer.cropping { pointer-events: auto; cursor: crosshair; }
     #kagemusha-svg-layer .annotation { pointer-events: auto; cursor: move; }
+    #kagemusha-svg-layer.cropping .annotation { pointer-events: none; }
     #kagemusha-svg-layer .annotation.selected { filter: drop-shadow(0 0 3px #6366f1); }
+    #kagemusha-svg-layer .capture-crop-box { fill: rgba(14,165,233,0.10); stroke: #0ea5e9; stroke-width: 2; stroke-dasharray: 8 4; pointer-events: none; }
     .kagemusha-hint {
       position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
       color: #fff; background: rgba(0,0,0,0.7); padding: 6px 16px; border-radius: 8px;
       font-size: 12px; z-index: 999999; font-family: -apple-system, sans-serif;
     }
   </style>
-  <span class="title">🥷 Annotation Editor</span>
-  <button id="kg-tool-rect" class="active">▭ Rectangle</button>
+  <span class="title">🥷</span>
+  <span class="group-label">Capture</span>
+  <button id="kg-cap-full" class="cap-btn active">📷 Full</button>
+  <button id="kg-cap-crop" class="cap-btn">✂️ Crop</button>
+  <div class="sep"></div>
+  <span class="group-label">Annotate</span>
+  <button id="kg-tool-rect" class="active">▭ Rect</button>
   <button id="kg-tool-arrow">→ Arrow</button>
   <button id="kg-tool-label">T Label</button>
   <div class="sep"></div>
@@ -99,7 +126,9 @@ toolbar.innerHTML = `
   <button class="save-btn" id="kg-save">💾 Save</button>
 `;
 document.body.appendChild(toolbar);
-document.body.style.paddingTop = `${TOOLBAR_HEIGHT}px`;
+toolbarHeight =
+	Math.ceil(toolbar.getBoundingClientRect().height) || TOOLBAR_HEIGHT_FALLBACK;
+document.body.style.paddingTop = `${toolbarHeight}px`;
 
 const hint = document.createElement("div");
 hint.className = "kagemusha-hint";
@@ -124,6 +153,11 @@ const defs = document.createElementNS(svgNS, "defs");
 defs.innerHTML =
 	'<marker id="kg-arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto" fill="#FF0000"><polygon points="0 0, 10 3.5, 0 7"/></marker>';
 svg.appendChild(defs);
+
+// Capture layer goes BEFORE annotations so it renders behind them
+const captureGroup = document.createElementNS(svgNS, "g");
+captureGroup.id = "kagemusha-capture-group";
+svg.appendChild(captureGroup);
 
 // --- HELPERS ---
 const getPos = (e: MouseEvent) => ({ x: e.pageX, y: e.pageY });
@@ -205,14 +239,100 @@ const createLabelGroup = (
 	return g;
 };
 
+// --- CAPTURE HELPERS ---
+const clearCaptureVisual = () => {
+	captureGroup.replaceChildren();
+};
+
+const drawCaptureRect = (
+	x: number,
+	y: number,
+	w: number,
+	h: number,
+	className: string,
+) => {
+	clearCaptureVisual();
+	const r = document.createElementNS(svgNS, "rect");
+	r.setAttribute("x", String(x));
+	r.setAttribute("y", String(y));
+	r.setAttribute("width", String(w));
+	r.setAttribute("height", String(h));
+	r.setAttribute("class", className);
+	captureGroup.appendChild(r);
+};
+
+const redrawCropVisual = () => {
+	if (captureMode !== "crop" || !captureCrop) {
+		clearCaptureVisual();
+		return;
+	}
+	drawCaptureRect(
+		captureCrop.x,
+		captureCrop.y,
+		captureCrop.w,
+		captureCrop.h,
+		"capture-crop-box",
+	);
+};
+
+const updateCaptureUi = () => {
+	document
+		.querySelectorAll<HTMLElement>("#kagemusha-toolbar .cap-btn")
+		.forEach((b) => {
+			b.classList.remove("active");
+		});
+	const activeId = captureMode === "fullPage" ? "kg-cap-full" : "kg-cap-crop";
+	document.getElementById(activeId)?.classList.add("active");
+	svg.classList.toggle("cropping", tool === "crop");
+	svg.classList.toggle(
+		"drawing",
+		tool === "rect" || tool === "arrow" || tool === "label",
+	);
+};
+
+const setCaptureMode = (
+	mode: "fullPage" | "crop",
+	opts: { resetSelection?: boolean } = {},
+) => {
+	captureMode = mode;
+	if (mode === "fullPage") {
+		captureCrop = null;
+		tool = "rect";
+		clearCaptureVisual();
+	} else {
+		if (opts.resetSelection) captureCrop = null;
+		tool = "crop";
+		redrawCropVisual();
+	}
+	// Mark the matching annotation tool button too
+	document
+		.querySelectorAll<HTMLElement>(
+			"#kg-tool-rect, #kg-tool-arrow, #kg-tool-label",
+		)
+		.forEach((b) => {
+			b.classList.remove("active");
+		});
+	if (tool === "rect" || tool === "arrow" || tool === "label") {
+		document.getElementById(`kg-tool-${tool}`)?.classList.add("active");
+	}
+	updateCaptureUi();
+	deselectAll();
+};
+
 // --- TOOLS ---
 const setTool = (t: string) => {
 	tool = t;
-	document.querySelectorAll("#kagemusha-toolbar button").forEach((b) => {
-		b.classList.remove("active");
-	});
+	document
+		.querySelectorAll<HTMLElement>(
+			"#kg-tool-rect, #kg-tool-arrow, #kg-tool-label",
+		)
+		.forEach((b) => {
+			b.classList.remove("active");
+		});
 	document.getElementById(`kg-tool-${t}`)?.classList.add("active");
-	svg.classList.toggle("drawing", true);
+	// Switching to an annotation tool exits capture-edit interaction
+	// (capture settings themselves are preserved).
+	updateCaptureUi();
 	deselectAll();
 };
 
@@ -225,8 +345,16 @@ document
 document
 	.getElementById("kg-tool-label")
 	?.addEventListener("click", () => setTool("label"));
+document
+	.getElementById("kg-cap-full")
+	?.addEventListener("click", () => setCaptureMode("fullPage"));
+document
+	.getElementById("kg-cap-crop")
+	?.addEventListener("click", () =>
+		setCaptureMode("crop", { resetSelection: !captureCrop }),
+	);
+
 document.getElementById("kg-delete")?.addEventListener("click", deleteSelected);
-document.getElementById("kg-save")?.addEventListener("click", save);
 
 document.addEventListener("keydown", (e: KeyboardEvent) => {
 	if (e.key === "Delete" || e.key === "Backspace") {
@@ -239,6 +367,22 @@ document.addEventListener("keydown", (e: KeyboardEvent) => {
 svg.addEventListener("mousedown", (e: MouseEvent) => {
 	if ((e.target as Element)?.closest(".annotation")) return;
 	const p = getPos(e);
+
+	if (tool === "crop") {
+		e.preventDefault();
+		deselectAll();
+		cropDragState = { sx: p.x, sy: p.y };
+		clearCaptureVisual();
+		const r = document.createElementNS(svgNS, "rect");
+		r.setAttribute("x", String(p.x));
+		r.setAttribute("y", String(p.y));
+		r.setAttribute("width", "0");
+		r.setAttribute("height", "0");
+		r.setAttribute("class", "capture-crop-box");
+		captureGroup.appendChild(r);
+		return;
+	}
+
 	deselectAll();
 
 	if (tool === "rect") {
@@ -314,6 +458,22 @@ svg.addEventListener("mousedown", (e: MouseEvent) => {
 
 // --- MOUSE: DRAG ---
 document.addEventListener("mousemove", (e: MouseEvent) => {
+	if (cropDragState) {
+		const p = getPos(e);
+		const x = Math.min(cropDragState.sx, p.x);
+		const y = Math.min(cropDragState.sy, p.y);
+		const w = Math.abs(p.x - cropDragState.sx);
+		const h = Math.abs(p.y - cropDragState.sy);
+		const r = captureGroup.firstChild as SVGRectElement | null;
+		if (r) {
+			r.setAttribute("x", String(x));
+			r.setAttribute("y", String(y));
+			r.setAttribute("width", String(w));
+			r.setAttribute("height", String(h));
+		}
+		return;
+	}
+
 	if (!dragState) return;
 	const p = getPos(e);
 
@@ -368,6 +528,25 @@ document.addEventListener("mousemove", (e: MouseEvent) => {
 
 // --- MOUSE: UP ---
 document.addEventListener("mouseup", (e: MouseEvent) => {
+	if (cropDragState) {
+		const p = getPos(e);
+		const w = Math.abs(p.x - cropDragState.sx);
+		const h = Math.abs(p.y - cropDragState.sy);
+		if (w < 5 || h < 5) {
+			cropDragState = null;
+			redrawCropVisual();
+			return;
+		}
+		captureCrop = {
+			x: Math.min(cropDragState.sx, p.x),
+			y: Math.min(cropDragState.sy, p.y),
+			w,
+			h,
+		};
+		cropDragState = null;
+		return;
+	}
+
 	if (!dragState) return;
 	const p = getPos(e);
 
@@ -421,12 +600,12 @@ document.addEventListener("mouseup", (e: MouseEvent) => {
 
 // --- LOAD EXISTING ---
 _win.__kagemusha_loadAnnotations = (decorations: Decoration[]) => {
-	const dpr = _win.__kagemusha_dpr || 1;
+	const dpr = window.devicePixelRatio || 1;
 	for (const d of decorations) {
 		const id = `a${nextId++}`;
 		if (d.type === "rect" && d.target) {
 			const rx = d.target.x / dpr;
-			const ry = d.target.y / dpr + TOOLBAR_HEIGHT;
+			const ry = d.target.y / dpr + toolbarHeight;
 			const rw = d.target.width / dpr;
 			const rh = d.target.height / dpr;
 			const rect = document.createElementNS(svgNS, "rect");
@@ -452,9 +631,9 @@ _win.__kagemusha_loadAnnotations = (decorations: Decoration[]) => {
 			rect.addEventListener("mousedown", (ev: MouseEvent) => startMove(ev, id));
 		} else if (d.type === "arrow" && d.from && d.to) {
 			const ax1 = d.from.x / dpr;
-			const ay1 = d.from.y / dpr + TOOLBAR_HEIGHT;
+			const ay1 = d.from.y / dpr + toolbarHeight;
 			const ax2 = d.to.x / dpr;
-			const ay2 = d.to.y / dpr + TOOLBAR_HEIGHT;
+			const ay2 = d.to.y / dpr + toolbarHeight;
 			const line = document.createElementNS(svgNS, "line");
 			line.setAttribute("x1", String(ax1));
 			line.setAttribute("y1", String(ay1));
@@ -477,7 +656,7 @@ _win.__kagemusha_loadAnnotations = (decorations: Decoration[]) => {
 			line.addEventListener("mousedown", (ev: MouseEvent) => startMove(ev, id));
 		} else if (d.type === "label" && d.position) {
 			const lx = d.position.x / dpr;
-			const ly = d.position.y / dpr + TOOLBAR_HEIGHT;
+			const ly = d.position.y / dpr + toolbarHeight;
 			const fontSize = (d.style?.fontSize ?? 14) / dpr;
 			const g = createLabelGroup(id, lx, ly, d.text ?? "", fontSize);
 			svg.appendChild(g);
@@ -487,9 +666,47 @@ _win.__kagemusha_loadAnnotations = (decorations: Decoration[]) => {
 	}
 };
 
+// --- LOAD EXISTING CAPTURE CONFIG ---
+_win.__kagemusha_loadCapture = (capture: CaptureSpec) => {
+	if (
+		!capture ||
+		!["fullPage", "crop"].includes((capture as { mode?: string }).mode ?? "")
+	) {
+		// Unknown / legacy mode (e.g. removed "selector") — fall back to fullPage
+		setCaptureMode("fullPage");
+		setTool("rect");
+		return;
+	}
+	if (capture.mode === "fullPage") {
+		setCaptureMode("fullPage");
+		// Leave annotation tool active after load
+		setTool("rect");
+		return;
+	}
+	if (capture.mode === "crop") {
+		// crop is stored in page CSS pixels (not DPR-scaled); shift by toolbar for display
+		const sx = capture.crop.start.x;
+		const sy = capture.crop.start.y + toolbarHeight;
+		const ex = capture.crop.end.x;
+		const ey = capture.crop.end.y + toolbarHeight;
+		captureCrop = { x: sx, y: sy, w: ex - sx, h: ey - sy };
+		captureMode = "crop";
+		tool = "rect";
+		redrawCropVisual();
+		updateCaptureUi();
+	}
+};
+
 // --- SAVE ---
-function save() {
-	const dpr = _win.__kagemusha_dpr || 1;
+const save = () => {
+	if (captureMode === "crop" && !captureCrop) {
+		alert(
+			"Crop mode is active but no area is drawn.\nDrag to define an area, or switch to Full Page.",
+		);
+		return;
+	}
+
+	const dpr = window.devicePixelRatio || 1;
 	const s = Math.round;
 	const decorations: Decoration[] = annotations
 		.map((a): Decoration | null => {
@@ -498,7 +715,7 @@ function save() {
 					type: "rect",
 					target: {
 						x: s((a.x ?? 0) * dpr),
-						y: s(((a.y ?? 0) - TOOLBAR_HEIGHT) * dpr),
+						y: s(((a.y ?? 0) - toolbarHeight) * dpr),
 						width: s((a.width ?? 0) * dpr),
 						height: s((a.height ?? 0) * dpr),
 					},
@@ -510,11 +727,11 @@ function save() {
 					type: "arrow",
 					from: {
 						x: s((a.fromX ?? 0) * dpr),
-						y: s(((a.fromY ?? 0) - TOOLBAR_HEIGHT) * dpr),
+						y: s(((a.fromY ?? 0) - toolbarHeight) * dpr),
 					},
 					to: {
 						x: s((a.toX ?? 0) * dpr),
-						y: s(((a.toY ?? 0) - TOOLBAR_HEIGHT) * dpr),
+						y: s(((a.toY ?? 0) - toolbarHeight) * dpr),
 					},
 					style: { color: "#FF0000", strokeWidth: s(3 * dpr) },
 				};
@@ -525,7 +742,7 @@ function save() {
 					text: a.text,
 					position: {
 						x: s((a.x ?? 0) * dpr),
-						y: s(((a.y ?? 0) - TOOLBAR_HEIGHT) * dpr),
+						y: s(((a.y ?? 0) - toolbarHeight) * dpr),
 					},
 					style: {
 						fontSize: s(14 * dpr),
@@ -538,5 +755,27 @@ function save() {
 		})
 		.filter((d): d is Decoration => d !== null);
 
-	_win.__kagemusha_save(JSON.stringify(decorations));
-}
+	let capture: CaptureSpec;
+	if (captureMode === "crop" && captureCrop) {
+		// Store in page CSS pixels (Playwright's clip is in CSS pixels, not DPR)
+		capture = {
+			mode: "crop",
+			crop: {
+				start: {
+					x: Math.round(captureCrop.x),
+					y: Math.round(captureCrop.y - toolbarHeight),
+				},
+				end: {
+					x: Math.round(captureCrop.x + captureCrop.w),
+					y: Math.round(captureCrop.y + captureCrop.h - toolbarHeight),
+				},
+			},
+		};
+	} else {
+		capture = { mode: "fullPage" };
+	}
+
+	_win.__kagemusha_save(JSON.stringify({ decorations, capture }));
+};
+
+document.getElementById("kg-save")?.addEventListener("click", save);

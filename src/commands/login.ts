@@ -1,7 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import chalk from "chalk";
-import { getAuthMetaPath, getAuthStatePath } from "../lib/auth.js";
+import {
+	defaultContextOptions,
+	getAuthMetaPath,
+	getAuthStatePath,
+} from "../lib/auth.js";
 import { findProjectRoot, loadConfig } from "../lib/config.js";
 
 export const loginCommand = async (): Promise<void> => {
@@ -22,12 +26,12 @@ export const loginCommand = async (): Promise<void> => {
 
 	const { chromium } = await import("playwright-chromium");
 	const browser = await chromium.launch({ headless: false });
-	const context = await browser.newContext({
-		viewport: {
-			width: config.screenshot.defaultViewport.width,
-			height: config.screenshot.defaultViewport.height,
-		},
-	});
+	// projectRoot is undefined here so authContextOptions resolves to {} —
+	// no storageState applied (we are creating one). viewport + DPR match
+	// capture so the saved session reflects the same render conditions.
+	const context = await browser.newContext(
+		defaultContextOptions(config, undefined),
+	);
 	const page = await context.newPage();
 
 	console.log(chalk.blue(`🌐 Opening ${loginUrl}...`));
