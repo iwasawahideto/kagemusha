@@ -6,7 +6,7 @@ import type {
 	KagemushaConfig,
 	ScreenshotDefinition,
 } from "../types.js";
-import { getAuthStatePath, hasAuthState } from "./auth.js";
+import { authContextOptions } from "./auth.js";
 
 type Browser = import("playwright-chromium").Browser;
 type Page = import("playwright-chromium").Page;
@@ -67,9 +67,7 @@ async function createContext(
 	const context = await browser.newContext({
 		viewport: { width: viewport.width, height: viewport.height },
 		deviceScaleFactor: viewport.deviceScaleFactor ?? 2,
-		...(hasAuthState(projectRoot)
-			? { storageState: getAuthStatePath(projectRoot) }
-			: {}),
+		...authContextOptions(projectRoot),
 	});
 
 	return context;

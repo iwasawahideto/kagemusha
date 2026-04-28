@@ -13,3 +13,12 @@ export const hasAuthState = (projectRoot: string): boolean =>
 
 export const getAuthMetaPath = (projectRoot: string): string =>
 	path.join(projectRoot, KAGEMUSHA_DIR, AUTH_META_FILE);
+
+// Spread into Playwright's browser.newContext() options to enable auth reuse
+// when a saved storageState exists. No-op when missing.
+export const authContextOptions = (
+	projectRoot: string | undefined,
+): { storageState?: string } =>
+	projectRoot && hasAuthState(projectRoot)
+		? { storageState: getAuthStatePath(projectRoot) }
+		: {};
