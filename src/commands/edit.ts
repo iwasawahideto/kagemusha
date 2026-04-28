@@ -59,6 +59,10 @@ export async function editCommand(options: EditOptions): Promise<void> {
 			width: config.screenshot.defaultViewport.width,
 			height: config.screenshot.defaultViewport.height,
 		},
+		// Match capture's DPR so the page renders identically in editor and
+		// during capture; otherwise srcset/font metrics drift and annotations
+		// land a few pixels off the intended elements.
+		deviceScaleFactor: config.screenshot.defaultViewport.deviceScaleFactor ?? 2,
 		...authContextOptions(projectRoot),
 	});
 	const page = await context.newPage();
