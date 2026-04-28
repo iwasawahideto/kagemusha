@@ -71,9 +71,8 @@ program
 
 program
 	.command("capture")
-	.description("Capture screenshots only")
+	.description("Capture screenshots (all definitions if --ids is omitted)")
 	.option("--ids <ids>", "Comma-separated screenshot definition IDs")
-	.option("--all", "Capture all definitions")
 	.option("--open", "Open screenshots in browser after capture")
 	.action(captureCommand);
 

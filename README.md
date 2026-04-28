@@ -25,7 +25,7 @@ npm install -D @wasao/kagemusha
 npx kagemusha init
 
 # Capture screenshots locally
-npx kagemusha capture --all
+npx kagemusha capture
 
 # Run full pipeline (capture → upload)
 npx kagemusha run
@@ -88,7 +88,7 @@ Hit **💾 Save** — both capture and decorations are written back to `.kagemus
 ### 4. Capture & publish
 
 ```bash
-npx kagemusha capture --all           # capture everything
+npx kagemusha capture                 # capture everything
 npx kagemusha capture --ids a,b,c     # capture specific IDs
 npx kagemusha capture --ids a --open  # open the result locally after capture
 npx kagemusha run                     # capture + upload (uses config.publish)
@@ -188,7 +188,7 @@ cd example
 bun install
 bun run serve          # Start sample app
 bunx kagemusha init    # Set up kagemusha
-bunx kagemusha capture --all --open
+bunx kagemusha capture --open
 ```
 
 ## Roadmap

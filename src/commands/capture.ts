@@ -5,7 +5,6 @@ import { captureScreenshots } from "../lib/screenshot.js";
 
 interface CaptureOptions {
 	ids?: string;
-	all?: boolean;
 	open?: boolean;
 }
 
