@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import chalk from "chalk";
+import { getAuthStatePath, hasAuthState } from "../lib/auth.js";
 import {
 	findProjectRoot,
 	loadConfig,
@@ -58,6 +59,9 @@ export async function editCommand(options: EditOptions): Promise<void> {
 			width: config.screenshot.defaultViewport.width,
 			height: config.screenshot.defaultViewport.height,
 		},
+		...(hasAuthState(projectRoot)
+			? { storageState: getAuthStatePath(projectRoot) }
+			: {}),
 	});
 	const page = await context.newPage();
 
