@@ -60,7 +60,6 @@ export type CaptureAction =
 
 export type CaptureConfig =
 	| { mode: "fullPage" }
-	| { mode: "selector"; selector: string }
 	| {
 			mode: "crop";
 			crop: { start: { x: number; y: number }; end: { x: number; y: number } };

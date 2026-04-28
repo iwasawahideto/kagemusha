@@ -11,20 +11,21 @@ interface CaptureOptions {
 
 // Open a file with the OS's default viewer (Preview on macOS, etc.).
 // `detached + unref` lets the kagemusha process exit while the viewer keeps
-// running.
+// running. We deliberately avoid `shell: true` so paths with spaces don't get
+// re-split — argv is passed straight through to the program.
 const openInDefaultApp = (filePath: string): void => {
-	const cmd =
-		process.platform === "darwin"
-			? "open"
-			: process.platform === "win32"
-				? "start"
-				: "xdg-open";
-	const args = process.platform === "win32" ? ["", filePath] : [filePath];
-	spawn(cmd, args, {
-		detached: true,
-		stdio: "ignore",
-		shell: process.platform === "win32",
-	}).unref();
+	if (process.platform === "darwin") {
+		spawn("open", [filePath], { detached: true, stdio: "ignore" }).unref();
+	} else if (process.platform === "win32") {
+		// `start` is a cmd.exe builtin; we invoke cmd directly. The empty
+		// string after `start` is the (required) window title placeholder.
+		spawn("cmd", ["/c", "start", "", filePath], {
+			detached: true,
+			stdio: "ignore",
+		}).unref();
+	} else {
+		spawn("xdg-open", [filePath], { detached: true, stdio: "ignore" }).unref();
+	}
 };
 
 export async function captureCommand(options: CaptureOptions): Promise<void> {
@@ -50,11 +51,7 @@ export async function captureCommand(options: CaptureOptions): Promise<void> {
 	const results = await captureScreenshots(config, definitions, projectRoot);
 
 	console.log(chalk.blue("🎨 Drawing annotations..."));
-	const annotated = await annotateScreenshots(
-		definitions,
-		results,
-		projectRoot,
-	);
+	const annotated = await annotateScreenshots(definitions, results, config);
 
 	console.log(
 		chalk.bold.green(`\n✅ Done! Screenshots saved to screenshots/\n`),

@@ -106,13 +106,8 @@ export async function editCommand(options: EditOptions): Promise<void> {
 		saveResolve();
 	});
 
-	// Set dpr BEFORE injecting script
-	const dpr = config.screenshot.defaultViewport.deviceScaleFactor ?? 2;
-	await page.evaluate((d) => {
-		(window as unknown as { __kagemusha_dpr: number }).__kagemusha_dpr = d;
-	}, dpr);
-
-	// Inject editor script and wait for it to fully load
+	// Inject editor script — DPR is read from window.devicePixelRatio inside,
+	// which matches the value set on the browser context above.
 	const editorScript = loadEditorScript();
 	await page.evaluate(editorScript);
 

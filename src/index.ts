@@ -73,7 +73,10 @@ program
 	.command("capture")
 	.description("Capture screenshots (all definitions if --ids is omitted)")
 	.option("--ids <ids>", "Comma-separated screenshot definition IDs")
-	.option("--open", "Open screenshots in browser after capture")
+	.option(
+		"--open",
+		"Open screenshots in the system default viewer (Preview / xdg-open / start)",
+	)
 	.action(captureCommand);
 
 program

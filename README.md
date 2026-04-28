@@ -77,7 +77,6 @@ Opens the real page in a Playwright browser with a toolbar overlay. Two groups o
 
 **Capture** — what area to screenshot
 - **📷 Full** — capture the whole page (default)
-- **🎯 Element** — hover to outline elements, click to pick one; the generated selector is shown in an editable text field
 - **✂️ Crop** — drag a rectangle on the page; re-drag to replace
 
 **Annotate** — decorations drawn on top of the captured image
@@ -129,12 +128,6 @@ npx kagemusha run                     # capture + upload (uses config.publish)
         "style": { "color": "#FF0000", "strokeWidth": 2 }
       }
     ]
-  },
-  {
-    "id": "dashboard-card",
-    "url": "/dashboard",
-    "capture": { "mode": "selector", "selector": "[data-testid=summary-card]" },
-    "decorations": []
   },
   {
     "id": "dashboard-hero",
@@ -198,7 +191,7 @@ bunx kagemusha capture --open
 - [x] S3 upload
 - [x] Auto-discover pages (SPA-aware BFS crawl)
 - [x] Login via browser (`storageState`)
-- [x] Visual editor for capture range (fullPage / selector / crop)
+- [x] Visual editor for capture range (fullPage / crop)
 - [ ] Visual regression testing (VRT)
 - [ ] Intercom / Zendesk integration
 - [ ] AI-powered text updates

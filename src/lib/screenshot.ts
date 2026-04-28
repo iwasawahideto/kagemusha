@@ -116,19 +116,6 @@ async function takeScreenshot(
 			await page.screenshot({ path: outputPath, fullPage: true });
 			break;
 
-		case "selector": {
-			const element = await page.waitForSelector(def.capture.selector, {
-				timeout: 10000,
-			});
-			if (!element) {
-				throw new Error(
-					`Element not found: ${def.capture.selector} (definition: ${def.id})`,
-				);
-			}
-			await element.screenshot({ path: outputPath });
-			break;
-		}
-
 		case "crop": {
 			const { start, end } = def.capture.crop;
 			await page.screenshot({
@@ -141,6 +128,14 @@ async function takeScreenshot(
 				},
 			});
 			break;
+		}
+
+		default: {
+			// Backward-compat: legacy "selector" mode (now removed) — fall back to fullPage
+			console.warn(
+				`  ⚠ ${def.id}: unknown capture mode "${(def.capture as { mode: string }).mode}", falling back to fullPage.`,
+			);
+			await page.screenshot({ path: outputPath, fullPage: true });
 		}
 	}
 }

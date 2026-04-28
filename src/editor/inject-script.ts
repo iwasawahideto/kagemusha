@@ -4,7 +4,6 @@
 
 // Type helpers for window properties set by edit.ts
 const _win = window as unknown as {
-	__kagemusha_dpr: number;
 	__kagemusha_save: (payloadJson: string) => void;
 	__kagemusha_loadAnnotations: (decorations: Decoration[]) => void;
 	__kagemusha_loadCapture: (capture: CaptureConfig) => void;
@@ -27,7 +26,6 @@ interface Decoration {
 
 type CaptureConfig =
 	| { mode: "fullPage" }
-	| { mode: "selector"; selector: string }
 	| {
 			mode: "crop";
 			crop: { start: { x: number; y: number }; end: { x: number; y: number } };
@@ -68,8 +66,7 @@ let dragState: DragState | null = null;
 let nextId = 1;
 
 // Capture state — persisted on save (in page CSS pixels, NOT DPR-scaled)
-let captureMode: "fullPage" | "selector" | "crop" = "fullPage";
-let captureSelector: string | null = null;
+let captureMode: "fullPage" | "crop" = "fullPage";
 let captureCrop: { x: number; y: number; w: number; h: number } | null = null;
 let cropDragState: {
 	sx: number;
@@ -99,12 +96,6 @@ toolbar.innerHTML = `
     #kagemusha-toolbar .group-label { color: #7a89b0; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; margin-right: -4px; }
     #kagemusha-toolbar .save-btn { background: #22c55e; border-color: #22c55e; font-weight: 600; margin-left: auto; }
     #kagemusha-toolbar .save-btn:hover { background: #16a34a; }
-    #kg-cap-selector {
-      padding: 6px 10px; background: #0a0f24; border: 1px solid #444; border-radius: 6px;
-      color: #7dd3fc; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      min-width: 220px; outline: none;
-    }
-    #kg-cap-selector:focus { border-color: #0ea5e9; }
     #kagemusha-svg-layer {
       position: absolute; top: 0; left: 0; width: 100%;
       z-index: 999998; pointer-events: none;
@@ -112,11 +103,9 @@ toolbar.innerHTML = `
     #kagemusha-svg-layer.drawing { pointer-events: auto; cursor: crosshair; }
     #kagemusha-svg-layer.cropping { pointer-events: auto; cursor: crosshair; }
     #kagemusha-svg-layer .annotation { pointer-events: auto; cursor: move; }
-    #kagemusha-svg-layer.cropping .annotation,
-    #kagemusha-svg-layer.picking .annotation { pointer-events: none; }
+    #kagemusha-svg-layer.cropping .annotation { pointer-events: none; }
     #kagemusha-svg-layer .annotation.selected { filter: drop-shadow(0 0 3px #6366f1); }
     #kagemusha-svg-layer .capture-crop-box { fill: rgba(14,165,233,0.10); stroke: #0ea5e9; stroke-width: 2; stroke-dasharray: 8 4; pointer-events: none; }
-    #kagemusha-svg-layer .capture-pick-box { fill: rgba(14,165,233,0.12); stroke: #0ea5e9; stroke-width: 2; stroke-dasharray: 4 3; pointer-events: none; }
     .kagemusha-hint {
       position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
       color: #fff; background: rgba(0,0,0,0.7); padding: 6px 16px; border-radius: 8px;
@@ -126,9 +115,7 @@ toolbar.innerHTML = `
   <span class="title">🥷</span>
   <span class="group-label">Capture</span>
   <button id="kg-cap-full" class="cap-btn active">📷 Full</button>
-  <button id="kg-cap-element" class="cap-btn">🎯 Element</button>
   <button id="kg-cap-crop" class="cap-btn">✂️ Crop</button>
-  <input type="text" id="kg-cap-selector" placeholder="selector..." spellcheck="false" style="display:none"/>
   <div class="sep"></div>
   <span class="group-label">Annotate</span>
   <button id="kg-tool-rect" class="active">▭ Rect</button>
@@ -253,76 +240,6 @@ const createLabelGroup = (
 };
 
 // --- CAPTURE HELPERS ---
-const isOurUi = (el: Element | null): boolean => {
-	if (!el) return false;
-	return Boolean(
-		el.closest("#kagemusha-toolbar") ||
-			el.closest("#kagemusha-svg-layer") ||
-			el.closest(".kagemusha-hint"),
-	);
-};
-
-const isUnique = (selector: string): boolean => {
-	try {
-		return document.querySelectorAll(selector).length === 1;
-	} catch {
-		return false;
-	}
-};
-
-const escapeAttr = (v: string): string => v.replace(/(["\\])/g, "\\$1");
-
-const generateSelector = (el: Element): string => {
-	// 1. id (CSS-safe identifier)
-	if (el.id && /^[a-zA-Z][\w-]*$/.test(el.id)) {
-		const sel = `#${el.id}`;
-		if (isUnique(sel)) return sel;
-	}
-
-	// 2. test attributes
-	for (const attr of ["data-testid", "data-test", "data-cy"]) {
-		const v = el.getAttribute(attr);
-		if (v) {
-			const sel = `[${attr}="${escapeAttr(v)}"]`;
-			if (isUnique(sel)) return sel;
-		}
-	}
-
-	// 3. aria-label (only if uniquely matches in document)
-	const ariaLabel = el.getAttribute("aria-label");
-	if (ariaLabel) {
-		const sel = `[aria-label="${escapeAttr(ariaLabel)}"]`;
-		if (isUnique(sel)) return sel;
-	}
-
-	// 4. unique class on this tag
-	const tagLower = el.tagName.toLowerCase();
-	for (const cls of Array.from(el.classList)) {
-		if (!/^[a-zA-Z][\w-]*$/.test(cls)) continue;
-		const sel = `${tagLower}.${cls}`;
-		if (isUnique(sel)) return sel;
-	}
-
-	// 5. nth-of-type fallback path
-	const parts: string[] = [];
-	let cur: Element | null = el;
-	while (cur && cur !== document.body && cur.parentElement) {
-		const tag = cur.tagName.toLowerCase();
-		const parent: Element = cur.parentElement;
-		const sameTag = Array.from(parent.children).filter(
-			(c) => c.tagName === cur?.tagName,
-		);
-		if (sameTag.length > 1) {
-			const idx = sameTag.indexOf(cur) + 1;
-			parts.unshift(`${tag}:nth-of-type(${idx})`);
-		} else {
-			parts.unshift(tag);
-		}
-		cur = parent;
-	}
-	return parts.join(" > ");
-};
-
 const clearCaptureVisual = () => {
 	captureGroup.replaceChildren();
 };
@@ -344,30 +261,6 @@ const drawCaptureRect = (
 	captureGroup.appendChild(r);
 };
 
-const redrawSelectorVisual = () => {
-	if (captureMode !== "selector" || !captureSelector) {
-		clearCaptureVisual();
-		return;
-	}
-	try {
-		const target = document.querySelector(captureSelector);
-		if (!target || isOurUi(target)) {
-			clearCaptureVisual();
-			return;
-		}
-		const rect = target.getBoundingClientRect();
-		drawCaptureRect(
-			rect.left + window.scrollX,
-			rect.top + window.scrollY,
-			rect.width,
-			rect.height,
-			"capture-pick-box",
-		);
-	} catch {
-		clearCaptureVisual();
-	}
-};
-
 const redrawCropVisual = () => {
 	if (captureMode !== "crop" || !captureCrop) {
 		clearCaptureVisual();
@@ -382,31 +275,14 @@ const redrawCropVisual = () => {
 	);
 };
 
-const selectorInput = document.getElementById(
-	"kg-cap-selector",
-) as HTMLInputElement;
-
 const updateCaptureUi = () => {
 	document
 		.querySelectorAll<HTMLElement>("#kagemusha-toolbar .cap-btn")
 		.forEach((b) => {
 			b.classList.remove("active");
 		});
-	const activeId =
-		captureMode === "fullPage"
-			? "kg-cap-full"
-			: captureMode === "selector"
-				? "kg-cap-element"
-				: "kg-cap-crop";
+	const activeId = captureMode === "fullPage" ? "kg-cap-full" : "kg-cap-crop";
 	document.getElementById(activeId)?.classList.add("active");
-	selectorInput.style.display = captureMode === "selector" ? "" : "none";
-	if (captureMode === "selector") {
-		selectorInput.value = captureSelector ?? "";
-	}
-	svg.classList.toggle(
-		"picking",
-		captureMode === "selector" && tool === "pick-element",
-	);
 	svg.classList.toggle("cropping", tool === "crop");
 	svg.classList.toggle(
 		"drawing",
@@ -415,23 +291,16 @@ const updateCaptureUi = () => {
 };
 
 const setCaptureMode = (
-	mode: "fullPage" | "selector" | "crop",
+	mode: "fullPage" | "crop",
 	opts: { resetSelection?: boolean } = {},
 ) => {
 	captureMode = mode;
 	if (mode === "fullPage") {
-		captureSelector = null;
 		captureCrop = null;
 		tool = "rect";
 		clearCaptureVisual();
-	} else if (mode === "selector") {
-		if (opts.resetSelection) captureSelector = null;
-		captureCrop = null;
-		tool = "pick-element";
-		redrawSelectorVisual();
-	} else if (mode === "crop") {
+	} else {
 		if (opts.resetSelection) captureCrop = null;
-		captureSelector = null;
 		tool = "crop";
 		redrawCropVisual();
 	}
@@ -480,27 +349,10 @@ document
 	.getElementById("kg-cap-full")
 	?.addEventListener("click", () => setCaptureMode("fullPage"));
 document
-	.getElementById("kg-cap-element")
-	?.addEventListener("click", () =>
-		setCaptureMode("selector", { resetSelection: !captureSelector }),
-	);
-document
 	.getElementById("kg-cap-crop")
 	?.addEventListener("click", () =>
 		setCaptureMode("crop", { resetSelection: !captureCrop }),
 	);
-
-let selectorRedrawTimer: number | undefined;
-selectorInput.addEventListener("input", () => {
-	captureSelector = selectorInput.value.trim() || null;
-	if (selectorRedrawTimer !== undefined) {
-		clearTimeout(selectorRedrawTimer);
-	}
-	selectorRedrawTimer = window.setTimeout(() => {
-		redrawSelectorVisual();
-		selectorRedrawTimer = undefined;
-	}, 150);
-});
 
 document.getElementById("kg-delete")?.addEventListener("click", deleteSelected);
 
@@ -619,23 +471,6 @@ document.addEventListener("mousemove", (e: MouseEvent) => {
 			r.setAttribute("width", String(w));
 			r.setAttribute("height", String(h));
 		}
-		return;
-	}
-
-	if (tool === "pick-element") {
-		const el = document.elementFromPoint(e.clientX, e.clientY);
-		if (!el || isOurUi(el)) {
-			clearCaptureVisual();
-			return;
-		}
-		const rect = el.getBoundingClientRect();
-		drawCaptureRect(
-			rect.left + window.scrollX,
-			rect.top + window.scrollY,
-			rect.width,
-			rect.height,
-			"capture-pick-box",
-		);
 		return;
 	}
 
@@ -763,29 +598,9 @@ document.addEventListener("mouseup", (e: MouseEvent) => {
 	dragState = null;
 });
 
-// --- CLICK: pick-element selection (capture-phase to preempt page handlers) ---
-document.addEventListener(
-	"click",
-	(e: MouseEvent) => {
-		if (tool !== "pick-element") return;
-		const target = e.target as Element | null;
-		if (!target || isOurUi(target)) return;
-		e.preventDefault();
-		e.stopPropagation();
-		const picked = document.elementFromPoint(e.clientX, e.clientY);
-		if (!picked || isOurUi(picked)) return;
-		captureSelector = generateSelector(picked);
-		selectorInput.value = captureSelector;
-		redrawSelectorVisual();
-		// Auto-exit pick mode so a stray click doesn't overwrite the selection
-		setTool("rect");
-	},
-	true,
-);
-
 // --- LOAD EXISTING ---
 _win.__kagemusha_loadAnnotations = (decorations: Decoration[]) => {
-	const dpr = _win.__kagemusha_dpr || 1;
+	const dpr = window.devicePixelRatio || 1;
 	for (const d of decorations) {
 		const id = `a${nextId++}`;
 		if (d.type === "rect" && d.target) {
@@ -855,10 +670,9 @@ _win.__kagemusha_loadAnnotations = (decorations: Decoration[]) => {
 _win.__kagemusha_loadCapture = (capture: CaptureConfig) => {
 	if (
 		!capture ||
-		!["fullPage", "selector", "crop"].includes(
-			(capture as { mode?: string }).mode ?? "",
-		)
+		!["fullPage", "crop"].includes((capture as { mode?: string }).mode ?? "")
 	) {
+		// Unknown / legacy mode (e.g. removed "selector") — fall back to fullPage
 		setCaptureMode("fullPage");
 		setTool("rect");
 		return;
@@ -867,16 +681,6 @@ _win.__kagemusha_loadCapture = (capture: CaptureConfig) => {
 		setCaptureMode("fullPage");
 		// Leave annotation tool active after load
 		setTool("rect");
-		return;
-	}
-	if (capture.mode === "selector") {
-		captureSelector = capture.selector;
-		captureMode = "selector";
-		// Stay on annotation tool by default — user can click "Element" to re-pick
-		tool = "rect";
-		selectorInput.value = capture.selector;
-		redrawSelectorVisual();
-		updateCaptureUi();
 		return;
 	}
 	if (capture.mode === "crop") {
@@ -895,12 +699,6 @@ _win.__kagemusha_loadCapture = (capture: CaptureConfig) => {
 
 // --- SAVE ---
 const save = () => {
-	if (captureMode === "selector" && !captureSelector) {
-		alert(
-			"Element mode is active but no element is picked.\nClick an element first, or switch to Full Page.",
-		);
-		return;
-	}
 	if (captureMode === "crop" && !captureCrop) {
 		alert(
 			"Crop mode is active but no area is drawn.\nDrag to define an area, or switch to Full Page.",
@@ -908,7 +706,7 @@ const save = () => {
 		return;
 	}
 
-	const dpr = _win.__kagemusha_dpr || 1;
+	const dpr = window.devicePixelRatio || 1;
 	const s = Math.round;
 	const decorations: Decoration[] = annotations
 		.map((a): Decoration | null => {
@@ -958,9 +756,7 @@ const save = () => {
 		.filter((d): d is Decoration => d !== null);
 
 	let capture: CaptureConfig;
-	if (captureMode === "selector" && captureSelector) {
-		capture = { mode: "selector", selector: captureSelector };
-	} else if (captureMode === "crop" && captureCrop) {
+	if (captureMode === "crop" && captureCrop) {
 		// Store in page CSS pixels (Playwright's clip is in CSS pixels, not DPR)
 		capture = {
 			mode: "crop",

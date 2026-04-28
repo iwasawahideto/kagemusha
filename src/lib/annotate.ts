@@ -4,16 +4,15 @@ import type {
 	CaptureConfig,
 	CaptureResult,
 	Decoration,
+	KagemushaConfig,
 	ScreenshotDefinition,
 } from "../types.js";
-import { loadConfig } from "./config.js";
 
 export async function annotateScreenshots(
 	definitions: ScreenshotDefinition[],
 	results: CaptureResult[],
-	projectRoot: string,
+	config: KagemushaConfig,
 ): Promise<CaptureResult[]> {
-	const config = loadConfig(projectRoot);
 	const dpr = config.screenshot.defaultViewport.deviceScaleFactor ?? 2;
 	const annotatedResults: CaptureResult[] = [];
 
@@ -43,11 +42,8 @@ export async function annotateScreenshots(
 }
 
 // Decorations are saved in page-relative device-pixel coords. When the
-// captured image is a crop (or a selector-bound element), we have to subtract
-// the crop's top-left so the SVG overlay lines up with what's actually in the
-// PNG. selector mode would need the runtime bounding box (not available here),
-// so currently only crop is corrected — annotations on selector-mode shots
-// may still drift.
+// captured image is a crop, we subtract the crop's top-left so the SVG overlay
+// lines up with what's actually in the PNG.
 const captureOffset = (
 	capture: CaptureConfig,
 	dpr: number,
