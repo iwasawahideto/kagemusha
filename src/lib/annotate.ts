@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import sharp from "sharp";
 import type {
-	CaptureConfig,
 	CaptureResult,
+	CaptureSpec,
 	Decoration,
 	KagemushaConfig,
 	ScreenshotDefinition,
@@ -45,7 +45,7 @@ export async function annotateScreenshots(
 // captured image is a crop, we subtract the crop's top-left so the SVG overlay
 // lines up with what's actually in the PNG.
 const captureOffset = (
-	capture: CaptureConfig,
+	capture: CaptureSpec,
 	dpr: number,
 ): { x: number; y: number } => {
 	if (capture.mode === "crop") {
@@ -58,7 +58,7 @@ async function drawAnnotations(
 	inputPath: string,
 	outputPath: string,
 	decorations: Decoration[],
-	capture: CaptureConfig,
+	capture: CaptureSpec,
 	dpr: number,
 ): Promise<void> {
 	const offset = captureOffset(capture, dpr);

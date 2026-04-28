@@ -38,7 +38,7 @@ export interface ScreenshotDefinition {
 	urlParams?: Record<string, string>;
 	viewport?: Viewport;
 	beforeCapture?: CaptureAction[];
-	capture: CaptureConfig;
+	capture: CaptureSpec;
 	decorations?: Decoration[];
 	hideElements?: string[];
 	intercom?: {
@@ -58,7 +58,7 @@ export type CaptureAction =
 	| { action: "waitForNavigation"; timeout?: number }
 	| { action: "evaluate"; script: string };
 
-export type CaptureConfig =
+export type CaptureSpec =
 	| { mode: "fullPage" }
 	| {
 			mode: "crop";

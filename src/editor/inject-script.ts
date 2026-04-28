@@ -6,7 +6,7 @@
 const _win = window as unknown as {
 	__kagemusha_save: (payloadJson: string) => void;
 	__kagemusha_loadAnnotations: (decorations: Decoration[]) => void;
-	__kagemusha_loadCapture: (capture: CaptureConfig) => void;
+	__kagemusha_loadCapture: (capture: CaptureSpec) => void;
 };
 
 interface Decoration {
@@ -24,7 +24,7 @@ interface Decoration {
 	};
 }
 
-type CaptureConfig =
+type CaptureSpec =
 	| { mode: "fullPage" }
 	| {
 			mode: "crop";
@@ -667,7 +667,7 @@ _win.__kagemusha_loadAnnotations = (decorations: Decoration[]) => {
 };
 
 // --- LOAD EXISTING CAPTURE CONFIG ---
-_win.__kagemusha_loadCapture = (capture: CaptureConfig) => {
+_win.__kagemusha_loadCapture = (capture: CaptureSpec) => {
 	if (
 		!capture ||
 		!["fullPage", "crop"].includes((capture as { mode?: string }).mode ?? "")
@@ -755,7 +755,7 @@ const save = () => {
 		})
 		.filter((d): d is Decoration => d !== null);
 
-	let capture: CaptureConfig;
+	let capture: CaptureSpec;
 	if (captureMode === "crop" && captureCrop) {
 		// Store in page CSS pixels (Playwright's clip is in CSS pixels, not DPR)
 		capture = {
