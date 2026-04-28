@@ -1,16 +1,20 @@
 import fs from "node:fs";
 import sharp from "sharp";
 import type {
+	CaptureConfig,
 	CaptureResult,
 	Decoration,
 	ScreenshotDefinition,
 } from "../types.js";
+import { loadConfig } from "./config.js";
 
 export async function annotateScreenshots(
 	definitions: ScreenshotDefinition[],
 	results: CaptureResult[],
-	_projectRoot: string,
+	projectRoot: string,
 ): Promise<CaptureResult[]> {
+	const config = loadConfig(projectRoot);
+	const dpr = config.screenshot.defaultViewport.deviceScaleFactor ?? 2;
 	const annotatedResults: CaptureResult[] = [];
 
 	for (const result of results) {
@@ -25,18 +29,43 @@ export async function annotateScreenshots(
 		}
 
 		const annotatedPath = result.rawPath.replace(".raw.png", ".png");
-		await drawAnnotations(result.rawPath, annotatedPath, def.decorations);
+		await drawAnnotations(
+			result.rawPath,
+			annotatedPath,
+			def.decorations,
+			def.capture,
+			dpr,
+		);
 		annotatedResults.push({ ...result, annotatedPath });
 	}
 
 	return annotatedResults;
 }
 
+// Decorations are saved in page-relative device-pixel coords. When the
+// captured image is a crop (or a selector-bound element), we have to subtract
+// the crop's top-left so the SVG overlay lines up with what's actually in the
+// PNG. selector mode would need the runtime bounding box (not available here),
+// so currently only crop is corrected — annotations on selector-mode shots
+// may still drift.
+const captureOffset = (
+	capture: CaptureConfig,
+	dpr: number,
+): { x: number; y: number } => {
+	if (capture.mode === "crop") {
+		return { x: capture.crop.start.x * dpr, y: capture.crop.start.y * dpr };
+	}
+	return { x: 0, y: 0 };
+};
+
 async function drawAnnotations(
 	inputPath: string,
 	outputPath: string,
 	decorations: Decoration[],
+	capture: CaptureConfig,
+	dpr: number,
 ): Promise<void> {
+	const offset = captureOffset(capture, dpr);
 	const image = sharp(inputPath);
 	const metadata = await image.metadata();
 	const width = metadata.width ?? 1280;
@@ -47,13 +76,13 @@ async function drawAnnotations(
 	for (const dec of decorations) {
 		switch (dec.type) {
 			case "rect":
-				svgParts.push(renderRect(dec));
+				svgParts.push(renderRect(dec, offset));
 				break;
 			case "arrow":
-				svgParts.push(renderArrow(dec));
+				svgParts.push(renderArrow(dec, offset));
 				break;
 			case "label":
-				svgParts.push(renderLabel(dec));
+				svgParts.push(renderLabel(dec, offset));
 				break;
 		}
 	}
@@ -75,7 +104,12 @@ async function drawAnnotations(
 		.toFile(outputPath);
 }
 
-function renderRect(dec: Extract<Decoration, { type: "rect" }>): string {
+type Offset = { x: number; y: number };
+
+function renderRect(
+	dec: Extract<Decoration, { type: "rect" }>,
+	offset: Offset,
+): string {
 	const color = dec.style?.color ?? "#FF0000";
 	const strokeWidth = dec.style?.strokeWidth ?? 2;
 	const borderRadius = dec.style?.borderRadius ?? 0;
@@ -87,28 +121,36 @@ function renderRect(dec: Extract<Decoration, { type: "rect" }>): string {
 	}
 
 	const { x, y, width, height } = dec.target;
-	return `<rect x="${x}" y="${y}" width="${width}" height="${height}"
+	return `<rect x="${x - offset.x}" y="${y - offset.y}" width="${width}" height="${height}"
     rx="${borderRadius}" ry="${borderRadius}"
     fill="none" stroke="${color}" stroke-width="${strokeWidth}" />`;
 }
 
-function renderArrow(dec: Extract<Decoration, { type: "arrow" }>): string {
+function renderArrow(
+	dec: Extract<Decoration, { type: "arrow" }>,
+	offset: Offset,
+): string {
 	const color = dec.style?.color ?? "#FF0000";
 	const strokeWidth = dec.style?.strokeWidth ?? 2;
 
 	const from = "x" in dec.from ? dec.from : { x: 0, y: 0 };
 	const to = "x" in dec.to ? dec.to : { x: 100, y: 100 };
 
-	return `<line x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"
+	return `<line x1="${from.x - offset.x}" y1="${from.y - offset.y}" x2="${to.x - offset.x}" y2="${to.y - offset.y}"
     stroke="${color}" stroke-width="${strokeWidth}"
     marker-end="url(#arrowhead)" />`;
 }
 
-function renderLabel(dec: Extract<Decoration, { type: "label" }>): string {
+function renderLabel(
+	dec: Extract<Decoration, { type: "label" }>,
+	offset: Offset,
+): string {
 	const fontSize = dec.style?.fontSize ?? 14;
 	const color = dec.style?.color ?? "#FF0000";
 	const bg = dec.style?.background ?? "#FFFFFF";
 	const pos = "x" in dec.position ? dec.position : { x: 0, y: 0 };
+	const px = pos.x - offset.x;
+	const py = pos.y - offset.y;
 
 	const paddingX = 6;
 	const paddingY = 4;
@@ -116,10 +158,10 @@ function renderLabel(dec: Extract<Decoration, { type: "label" }>): string {
 	const textHeight = fontSize;
 
 	return `
-    <rect x="${pos.x - paddingX}" y="${pos.y - textHeight - paddingY}"
+    <rect x="${px - paddingX}" y="${py - textHeight - paddingY}"
       width="${textWidth + paddingX * 2}" height="${textHeight + paddingY * 2}"
       rx="4" ry="4" fill="${bg}" />
-    <text x="${pos.x}" y="${pos.y}" font-size="${fontSize}"
+    <text x="${px}" y="${py}" font-size="${fontSize}"
       fill="${color}" font-family="sans-serif">${escapeXml(dec.text)}</text>
   `;
 }
