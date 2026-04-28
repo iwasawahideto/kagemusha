@@ -6,7 +6,7 @@ import type {
 	KagemushaConfig,
 	ScreenshotDefinition,
 } from "../types.js";
-import { authContextOptions } from "./auth.js";
+import { defaultContextOptions } from "./auth.js";
 
 type Browser = import("playwright-chromium").Browser;
 type Page = import("playwright-chromium").Page;
@@ -62,15 +62,7 @@ async function createContext(
 	config: KagemushaConfig,
 	projectRoot: string,
 ): Promise<BrowserContext> {
-	const viewport = config.screenshot.defaultViewport;
-
-	const context = await browser.newContext({
-		viewport: { width: viewport.width, height: viewport.height },
-		deviceScaleFactor: viewport.deviceScaleFactor ?? 2,
-		...authContextOptions(projectRoot),
-	});
-
-	return context;
+	return browser.newContext(defaultContextOptions(config, projectRoot));
 }
 
 async function captureOne(

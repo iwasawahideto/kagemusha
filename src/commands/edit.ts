@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import chalk from "chalk";
-import { authContextOptions } from "../lib/auth.js";
+import { defaultContextOptions } from "../lib/auth.js";
 import {
 	findProjectRoot,
 	loadConfig,
@@ -54,17 +54,9 @@ export async function editCommand(options: EditOptions): Promise<void> {
 
 	const { chromium } = await import("playwright-chromium");
 	const browser = await chromium.launch({ headless: false });
-	const context = await browser.newContext({
-		viewport: {
-			width: config.screenshot.defaultViewport.width,
-			height: config.screenshot.defaultViewport.height,
-		},
-		// Match capture's DPR so the page renders identically in editor and
-		// during capture; otherwise srcset/font metrics drift and annotations
-		// land a few pixels off the intended elements.
-		deviceScaleFactor: config.screenshot.defaultViewport.deviceScaleFactor ?? 2,
-		...authContextOptions(projectRoot),
-	});
+	const context = await browser.newContext(
+		defaultContextOptions(config, projectRoot),
+	);
 	const page = await context.newPage();
 
 	const urlPath = def.url.replace(
