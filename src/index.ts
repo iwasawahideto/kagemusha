@@ -4,6 +4,7 @@ import chalk from "chalk";
 import { Command } from "commander";
 import { addCommand } from "./commands/add.js";
 import { captureCommand } from "./commands/capture.js";
+import { compareCommand } from "./commands/compare.js";
 import { discoverCommand } from "./commands/discover.js";
 import { editCommand } from "./commands/edit.js";
 import { initCommand } from "./commands/init.js";
@@ -87,15 +88,23 @@ program
 	.description("Validate config and definition files")
 	.action(validateCommand);
 
-// Phase 2 commands
 program
 	.command("compare")
 	.description(
-		`Compare screenshots with baselines (VRT) ${chalk.yellow("[coming soon]")}`,
+		"Compare current screenshots against baselines (pixel diff via odiff)",
 	)
-	.action(() => {
-		console.log(chalk.yellow("\n🚧 compare is coming in Phase 2.\n"));
-	});
+	.option("--ids <ids>", "Comma-separated screenshot definition IDs")
+	.option(
+		"--threshold <ratio>",
+		"Diff ratio (0-1) to flag as changed; overrides config",
+	)
+	.option(
+		"--update-baseline",
+		"Adopt current screenshots as new baselines (skip diff)",
+	)
+	.action(compareCommand);
+
+// Phase 2 commands
 
 program
 	.command("publish")

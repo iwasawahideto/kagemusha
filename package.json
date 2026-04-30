@@ -47,6 +47,7 @@
     "commander": "^13.0.0",
     "glob": "^11.0.0",
     "inquirer": "^12.0.0",
+    "odiff-bin": "^4.3.8",
     "playwright-chromium": "^1.50.0",
     "sharp": "^0.34.5",
     "yaml": "^2.7.0"
