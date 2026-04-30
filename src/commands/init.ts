@@ -9,7 +9,7 @@ import { discoverPages } from "../lib/crawl.js";
 import { deriveIdFromPath } from "../lib/definition.js";
 import type { KagemushaConfig, ScreenshotDefinition } from "../types.js";
 
-export async function initCommand(): Promise<void> {
+export const initCommand = async (): Promise<void> => {
 	console.log(chalk.bold("\n🥷 Kagemusha — Setup\n"));
 
 	const cwd = process.cwd();
@@ -80,7 +80,7 @@ export async function initCommand(): Promise<void> {
 		app: { baseUrl },
 		screenshot: {
 			defaultViewport: { width: 1280, height: 720, deviceScaleFactor: 2 },
-			defaultDiffThreshold: 0.5,
+			defaultDiffThreshold: 0.005,
 		},
 		publish:
 			destination === "local"
@@ -94,6 +94,10 @@ export async function initCommand(): Promise<void> {
 		toYaml(config, { lineWidth: 120 }),
 	);
 	console.log(chalk.green("\n✓ Created kagemusha.config.yaml"));
+
+	// Update .gitignore so canonical/staging artifacts don't pollute the repo.
+	// Canonical lives in S3 (or a local outputDir for testing) — never in git.
+	updateGitignore(cwd, outputDir);
 
 	// Step 2: Discover pages and create screenshot definitions
 
@@ -234,23 +238,78 @@ export async function initCommand(): Promise<void> {
 
 	console.log(chalk.bold.green("\n✅ Setup complete!\n"));
 	console.log(chalk.gray("Next steps:"));
-	console.log(chalk.gray("  npx kagemusha capture    — Capture screenshots"));
 	console.log(
-		chalk.gray("  npx kagemusha edit       — Edit annotations visually"),
+		chalk.gray("  npx kagemusha capture          — Dry-run: show diffs"),
 	);
 	console.log(
-		chalk.gray("  npx kagemusha run        — Capture + upload to S3\n"),
+		chalk.gray(
+			"  npx kagemusha capture --apply  — Update canonical for changed",
+		),
 	);
-}
+	console.log(
+		chalk.gray("  npx kagemusha edit             — Edit annotations\n"),
+	);
+};
 
-function generateWorkflowTemplate(): string {
-	return `name: Kagemusha - Screenshot Update
+const GITIGNORE_ENTRIES = [
+	".kagemusha/.staging/",
+	".kagemusha/.cache/",
+	".kagemusha/auth-state.json",
+	".kagemusha/auth-meta.json",
+	"reports/",
+];
+
+// Strip trailing slash so `screenshots` and `screenshots/` are treated as the
+// same gitignore entry (and we don't append duplicates).
+const stripTrailingSlash = (s: string): string => s.replace(/\/+$/, "");
+
+const updateGitignore = (cwd: string, outputDir: string): void => {
+	const gitignorePath = path.join(cwd, ".gitignore");
+	const existing = fs.existsSync(gitignorePath)
+		? fs.readFileSync(gitignorePath, "utf8")
+		: "";
+	const present = new Set(
+		existing
+			.split("\n")
+			.map((l) => l.trim())
+			.filter((l) => l.length > 0)
+			.map(stripTrailingSlash),
+	);
+
+	const normalizedOutputDir = outputDir
+		.replace(/^\.\//, "")
+		.replace(/\/+$/, "");
+	const entries = [...GITIGNORE_ENTRIES, `${normalizedOutputDir}/`];
+
+	const additions = entries.filter((e) => !present.has(stripTrailingSlash(e)));
+	if (additions.length === 0) return;
+
+	const block = ["", "# kagemusha", ...additions, ""];
+	const next =
+		existing.endsWith("\n") || existing === ""
+			? existing + block.join("\n")
+			: `${existing}\n${block.join("\n")}`;
+	fs.writeFileSync(gitignorePath, next);
+	console.log(
+		chalk.green(
+			`✓ Updated .gitignore (added ${additions.length} kagemusha entries)`,
+		),
+	);
+};
+
+const generateWorkflowTemplate = (): string =>
+	`name: Kagemusha - Screenshot Update
 
 on:
   pull_request:
     types: [closed]
     branches: [main]
   workflow_dispatch:
+
+# Serialize runs so concurrent merges can't race the S3 canonical
+concurrency:
+  group: kagemusha
+  cancel-in-progress: false
 
 jobs:
   update-screenshots:
@@ -277,9 +336,18 @@ jobs:
         env:
           KAGEMUSHA_STORAGE_STATE: \${{ secrets.KAGEMUSHA_STORAGE_STATE }}
 
-      - run: npx kagemusha run
+      # Pulls canonical from S3, diffs against fresh capture,
+      # pushes only what changed back to S3. No screenshots/ commit needed.
+      - run: npx kagemusha capture --apply
         env:
           AWS_ACCESS_KEY_ID: \${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: \${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      # Keep diff visualizations as artifacts for later review
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kagemusha-diffs
+          path: reports/diff/
+          if-no-files-found: ignore
 `;
-}
