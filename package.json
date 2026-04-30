@@ -60,5 +60,12 @@
     "@types/sharp": "^0.32.0",
     "husky": "^9.1.7",
     "typescript": "^5.7.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "odiff-bin",
+      "playwright-chromium",
+      "sharp"
+    ]
   }
 }
