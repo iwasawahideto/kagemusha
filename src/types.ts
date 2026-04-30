@@ -99,19 +99,3 @@ export interface LabelDecoration {
 		background?: string;
 	};
 }
-
-export interface CaptureResult {
-	id: string;
-	rawPath: string;
-	annotatedPath: string;
-	timestamp: string;
-}
-
-export interface CompareResult {
-	id: string;
-	status: "unchanged" | "minor" | "changed";
-	diffRate: number;
-	beforePath?: string;
-	afterPath?: string;
-	diffPath?: string;
-}
