@@ -23,14 +23,18 @@ async function loadPlaywright() {
 	}
 }
 
-const SCREENSHOTS_DIR = "screenshots";
+const DEFAULT_SCREENSHOTS_DIR = "screenshots";
+
+export const getDefaultScreenshotsDir = (projectRoot: string): string =>
+	path.join(projectRoot, DEFAULT_SCREENSHOTS_DIR);
 
 export async function captureScreenshots(
 	config: KagemushaConfig,
 	definitions: ScreenshotDefinition[],
 	projectRoot: string,
+	options: { outputDir?: string } = {},
 ): Promise<CaptureResult[]> {
-	const outputDir = path.join(projectRoot, SCREENSHOTS_DIR);
+	const outputDir = options.outputDir ?? getDefaultScreenshotsDir(projectRoot);
 	fs.mkdirSync(outputDir, { recursive: true });
 
 	const { chromium } = await loadPlaywright();

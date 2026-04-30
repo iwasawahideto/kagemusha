@@ -1,19 +1,24 @@
 import fs from "node:fs";
 import chalk from "chalk";
-import {
-	adoptAsBaseline,
-	ensureBaselineDirs,
-	getBaselinePath,
-	getCurrentPath,
-	getDiffPath,
-} from "../lib/baseline.js";
 import { findProjectRoot, loadConfig, loadDefinitions } from "../lib/config.js";
 import { type DiffStatus, diffImages } from "../lib/diff.js";
+import {
+	captureScreenshots,
+	getDefaultScreenshotsDir,
+} from "../lib/screenshot.js";
+import {
+	cleanupStaging,
+	ensureStagingDirs,
+	getReportDiffPath,
+	getStagingDir,
+	getStagingPath,
+	promoteToCanonical,
+} from "../lib/staging.js";
 
 interface CompareOptions {
 	ids?: string;
 	threshold?: string;
-	updateBaseline?: boolean;
+	apply?: boolean;
 }
 
 export const compareCommand = async (
@@ -35,48 +40,66 @@ export const compareCommand = async (
 		return;
 	}
 
-	ensureBaselineDirs(projectRoot);
+	ensureStagingDirs(projectRoot);
 
-	// 0-1 の比率。0.005 = 0.5% の pixel が違ったら "changed"
 	const threshold = options.threshold
 		? Number.parseFloat(options.threshold)
 		: (config.screenshot.defaultDiffThreshold ?? 0.005);
 
+	const canonicalDir = getDefaultScreenshotsDir(projectRoot);
+	const stagingDir = getStagingDir(projectRoot);
+
+	// 1. Capture all selected definitions into staging (does NOT touch canonical)
+	console.log(
+		chalk.blue(
+			`📸 Capturing ${definitions.length} screenshot(s) to staging...\n`,
+		),
+	);
+	await captureScreenshots(config, definitions, projectRoot, {
+		outputDir: stagingDir,
+	});
+
+	// 2. Diff each staging vs canonical
 	const results: DiffStatus[] = [];
 
 	for (const def of definitions) {
-		const baseline = getBaselinePath(projectRoot, def.id);
-		const current = getCurrentPath(projectRoot, def.id);
-		const diffPath = getDiffPath(projectRoot, def.id);
+		const canonicalPath = `${canonicalDir}/${def.id}.png`;
+		const stagingPath = getStagingPath(projectRoot, def.id);
+		const diffPath = getReportDiffPath(projectRoot, def.id);
 
-		if (!fs.existsSync(current)) {
+		if (!fs.existsSync(stagingPath)) {
 			results.push({ id: def.id, status: "missing" });
 			continue;
 		}
 
-		// 初回 or --update-baseline 指定時 → 現状を baseline として採用
-		if (!fs.existsSync(baseline) || options.updateBaseline) {
-			adoptAsBaseline(projectRoot, def.id);
-			results.push({
-				id: def.id,
-				status: options.updateBaseline ? "unchanged" : "new",
-			});
+		// New: no canonical yet — adopt staging as canonical (only if --apply)
+		if (!fs.existsSync(canonicalPath)) {
+			if (options.apply) {
+				promoteToCanonical(stagingPath, canonicalPath);
+			}
+			results.push({ id: def.id, status: "new" });
 			continue;
 		}
 
-		const result = await diffImages(baseline, current, diffPath);
+		const result = await diffImages(canonicalPath, stagingPath, diffPath);
 
 		if (result.match) {
 			results.push({ id: def.id, status: "unchanged" });
-			// 一致したら diff ファイル消す (要らないので)
 			fs.rmSync(diffPath, { force: true });
+			fs.rmSync(stagingPath, { force: true });
 		} else if (result.reason === "layout-diff") {
+			if (options.apply) {
+				promoteToCanonical(stagingPath, canonicalPath);
+			}
 			results.push({
 				id: def.id,
 				status: "changed",
 				reason: "layout-diff",
 			});
 		} else {
+			if (options.apply) {
+				promoteToCanonical(stagingPath, canonicalPath);
+			}
 			results.push({
 				id: def.id,
 				status: "changed",
@@ -87,7 +110,7 @@ export const compareCommand = async (
 		}
 	}
 
-	// 集計
+	// 3. Print summary
 	const changed = results.filter((r) => r.status === "changed");
 	const unchanged = results.filter((r) => r.status === "unchanged");
 	const newly = results.filter((r) => r.status === "new");
@@ -97,19 +120,26 @@ export const compareCommand = async (
 		if (r.status === "unchanged") {
 			console.log(chalk.gray(`  ✓ ${r.id}`));
 		} else if (r.status === "new") {
-			console.log(chalk.cyan(`  + ${r.id} (new baseline)`));
+			const action = options.apply ? "added to canonical" : "would be added";
+			console.log(chalk.cyan(`  + ${r.id} (${action})`));
 		} else if (r.status === "missing") {
-			console.log(chalk.yellow(`  ? ${r.id} (current screenshot missing)`));
+			console.log(chalk.yellow(`  ? ${r.id} (capture missing)`));
 		} else if (r.status === "changed") {
 			const pct =
 				r.reason === "pixel-diff" && r.diffPercentage !== undefined
 					? ` (${r.diffPercentage.toFixed(2)}%)`
 					: ` (${r.reason})`;
-			console.log(chalk.red(`  ✗ ${r.id}${pct}`));
+			const action = options.apply ? "→ updated" : "→ would update";
+			console.log(chalk.red(`  ✗ ${r.id}${pct} ${chalk.gray(action)}`));
 			if (r.diffPath) {
 				console.log(chalk.gray(`      ↳ ${r.diffPath}`));
 			}
 		}
+	}
+
+	// 4. Cleanup staging dir if everything was unchanged
+	if (changed.length === 0 && newly.length === 0) {
+		cleanupStaging(projectRoot);
 	}
 
 	console.log("");
@@ -120,7 +150,15 @@ export const compareCommand = async (
 		),
 	);
 
-	// threshold 超えがあれば exit 1 (CI で止めるため)
+	if (!options.apply && (changed.length > 0 || newly.length > 0)) {
+		console.log(
+			chalk.gray(
+				`\nRun with --apply to update canonical screenshots/ for changed files.`,
+			),
+		);
+	}
+
+	// Exit code: 1 if changed (CI 用)
 	const overThreshold = changed.filter(
 		(r) =>
 			r.status === "changed" &&
@@ -129,13 +167,9 @@ export const compareCommand = async (
 			r.diffPercentage / 100 > threshold,
 	);
 	if (overThreshold.length > 0) {
-		console.log(
-			chalk.red(
-				`\n${overThreshold.length} screenshot(s) over threshold (${(threshold * 100).toFixed(2)}%).\n`,
-			),
-		);
-		process.exitCode = 1;
-	} else {
-		console.log("");
+		if (!options.apply) {
+			process.exitCode = 1;
+		}
 	}
+	console.log("");
 };

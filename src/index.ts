@@ -91,7 +91,7 @@ program
 program
 	.command("compare")
 	.description(
-		"Compare current screenshots against baselines (pixel diff via pixelmatch)",
+		"Capture into staging and diff against canonical screenshots/ (pure-JS pixelmatch)",
 	)
 	.option("--ids <ids>", "Comma-separated screenshot definition IDs")
 	.option(
@@ -99,8 +99,8 @@ program
 		"Diff ratio (0-1) to flag as changed; overrides config",
 	)
 	.option(
-		"--update-baseline",
-		"Adopt current screenshots as new baselines (skip diff)",
+		"--apply",
+		"Promote changed staging captures to screenshots/ (= update canonical)",
 	)
 	.action(compareCommand);
 

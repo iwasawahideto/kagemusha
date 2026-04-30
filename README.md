@@ -10,7 +10,7 @@ When you push code, Kagemusha automatically captures screenshots of your app, de
 - **Auto-discover pages** — Crawls your app (SPA routes included) and lets you pick which ones to capture
 - **Login once** — Logs in via browser and reuses the session (`storageState`) for all captures
 - **Playwright-powered** — Full-page / crop capture, pre-capture actions, element hiding
-- **Visual regression** — Pixel diff against baselines (pure-JS via [pixelmatch](https://github.com/mapbox/pixelmatch)), flags only what visually changed
+- **Visual regression** — Capture into staging, diff against canonical `screenshots/` via [pixelmatch](https://github.com/mapbox/pixelmatch), update only what changed
 - **Visual editor** — Draw rectangles, arrows, and labels; pick crop range by drag
 - **S3 upload** — Stable URLs you can embed in help articles once and never touch again
 - **Local mode** — Save screenshots locally for review before uploading
@@ -28,8 +28,11 @@ npx kagemusha init
 # Capture screenshots locally
 npx kagemusha capture
 
-# Compare against baselines (= what changed visually?)
+# Capture & diff (dry-run): show what would change
 npx kagemusha compare
+
+# Capture & apply: update screenshots/ for changed files only
+npx kagemusha compare --apply
 
 # Run full pipeline (capture + upload)
 npx kagemusha run
@@ -98,21 +101,22 @@ npx kagemusha capture --ids a --open  # open the result in default viewer
 
 Output goes to `screenshots/<id>.png`.
 
-### 5. Compare against baselines (VRT) — `compare`
+### 5. Compare against canonical (VRT) — `compare`
 
 ```bash
-npx kagemusha compare                          # diff screenshots/ vs baselines/
-npx kagemusha compare --ids a,b                # only those IDs
-npx kagemusha compare --threshold 0.001        # 0.1% pixel diff = flagged
-npx kagemusha compare --update-baseline        # adopt current as new baseline
+npx kagemusha compare                  # capture to staging, diff vs screenshots/, dry-run
+npx kagemusha compare --ids a,b        # only those IDs
+npx kagemusha compare --threshold 0.001  # 0.1% pixel diff = flagged
+npx kagemusha compare --apply          # update screenshots/ for changed files
 ```
 
 What happens:
 
-- Compares `screenshots/<id>.png` against `baselines/<id>.png` using [pixelmatch](https://github.com/mapbox/pixelmatch) (pure JS, no native binary)
-- If a baseline is missing, the current screenshot is adopted as the baseline (status: `new`)
-- If they differ, a diff visualization is written to `reports/diff/<id>.diff.png`
-- Returns exit code 1 if any screenshot exceeds the threshold (perfect for CI fail-on-change)
+1. Captures fresh screenshots into `.kagemusha/.staging/` (does NOT touch `screenshots/`)
+2. Diffs each staging file against the canonical `screenshots/<id>.png` using [pixelmatch](https://github.com/mapbox/pixelmatch)
+3. Writes diff visualizations to `reports/diff/<id>.diff.png` for changed files
+4. **Without `--apply`**: dry-run only — `screenshots/` is untouched, exit code 1 if any diff
+5. **With `--apply`**: changed files are promoted from staging to `screenshots/` (canonical updated). Unchanged files are left alone (mtime preserved → clean `git status`)
 
 Output looks like:
 
@@ -120,31 +124,37 @@ Output looks like:
 🥷 Kagemusha — Compare
 
   ✓ engagements-overview
-  ✗ admin-groups (2.34%)
+  ✗ admin-groups (2.34%) → would update
       ↳ reports/diff/admin-groups.diff.png
-  + new-page (new baseline)
+  + new-page (would be added)
 
 changed: 1 / unchanged: 1 / new: 1
+
+Run with --apply to update canonical screenshots/ for changed files.
 ```
 
-**Recommended directory layout (in your repo)**:
+**Single canonical directory** (= `screenshots/`):
+
+- `screenshots/` is the truth — committed to git, served via S3, embedded in help articles
+- `compare --apply` only writes when there's an actual diff → `git status` only shows files that really changed
+- No separate `baselines/` directory; git history IS the baseline history
 
 ```
-screenshots/         # capture output (git-ignored)
-baselines/           # commit these — PR review shows image diff naturally
-reports/diff/        # diff visualizations (git-ignored)
+screenshots/                 # canonical truth (commit this)
+.kagemusha/.staging/         # internal capture staging (git-ignored)
+reports/diff/                # diff visualizations (git-ignored)
 ```
 
 Add to `.gitignore`:
 
 ```
-screenshots/
+.kagemusha/.staging/
 reports/
 .kagemusha/auth-state.json
 .kagemusha/auth-meta.json
 ```
 
-Keep `baselines/` **tracked** so PR reviewers can eyeball changes inline.
+Keep `screenshots/` **tracked** so PR reviewers can eyeball image diffs inline.
 
 ### 6. Publish
 
@@ -165,7 +175,7 @@ Once a screenshot is at a stable S3 URL, your help article can embed that URL on
 | `kagemusha list` | List all definitions, grouped by URL |
 | `kagemusha edit --id <id>` | Open the visual editor (capture range + annotations) |
 | `kagemusha capture` | Capture screenshots only |
-| `kagemusha compare` | Diff current screenshots against baselines (VRT) |
+| `kagemusha compare` | Capture into staging and diff against canonical `screenshots/` (use `--apply` to commit changed) |
 | `kagemusha run` | Full pipeline: capture + upload |
 | `kagemusha validate` | Validate config and definition files |
 | `kagemusha publish` | Publish to Intercom / Zendesk (coming soon) |
@@ -237,10 +247,11 @@ jobs:
         env:
           KAGEMUSHA_STORAGE_STATE: ${{ secrets.KAGEMUSHA_STORAGE_STATE }}
 
-      - run: npx kagemusha capture
-      - run: npx kagemusha compare       # exit 1 if anything changed
-        continue-on-error: true          # don't fail the job — let the next step decide
-      - run: npx kagemusha run           # capture again + S3 upload (only if you want to auto-publish)
+      # compare with --apply: update screenshots/ for changed files only
+      # exit 1 if anything changed (gate for downstream auto-publish if desired)
+      - run: npx kagemusha compare --apply
+        continue-on-error: true
+      - run: npx kagemusha run           # S3 upload (publishes screenshots/ to stable URLs)
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
