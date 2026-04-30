@@ -10,7 +10,7 @@ When you push code, Kagemusha automatically captures screenshots of your app, de
 - **Auto-discover pages** — Crawls your app (SPA routes included) and lets you pick which ones to capture
 - **Login once** — Logs in via browser and reuses the session (`storageState`) for all captures
 - **Playwright-powered** — Full-page / crop capture, pre-capture actions, element hiding
-- **Visual regression** — Pixel diff against baselines (powered by [odiff](https://github.com/dmtrKovalenko/odiff)), flags only what visually changed
+- **Visual regression** — Pixel diff against baselines (pure-JS via [pixelmatch](https://github.com/mapbox/pixelmatch)), flags only what visually changed
 - **Visual editor** — Draw rectangles, arrows, and labels; pick crop range by drag
 - **S3 upload** — Stable URLs you can embed in help articles once and never touch again
 - **Local mode** — Save screenshots locally for review before uploading
@@ -109,7 +109,7 @@ npx kagemusha compare --update-baseline        # adopt current as new baseline
 
 What happens:
 
-- Compares `screenshots/<id>.png` against `baselines/<id>.png` using [odiff](https://github.com/dmtrKovalenko/odiff)
+- Compares `screenshots/<id>.png` against `baselines/<id>.png` using [pixelmatch](https://github.com/mapbox/pixelmatch) (pure JS, no native binary)
 - If a baseline is missing, the current screenshot is adopted as the baseline (status: `new`)
 - If they differ, a diff visualization is written to `reports/diff/<id>.diff.png`
 - Returns exit code 1 if any screenshot exceeds the threshold (perfect for CI fail-on-change)

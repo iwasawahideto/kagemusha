@@ -91,7 +91,7 @@ program
 program
 	.command("compare")
 	.description(
-		"Compare current screenshots against baselines (pixel diff via odiff)",
+		"Compare current screenshots against baselines (pixel diff via pixelmatch)",
 	)
 	.option("--ids <ids>", "Comma-separated screenshot definition IDs")
 	.option(

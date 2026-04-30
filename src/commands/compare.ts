@@ -70,14 +70,11 @@ export const compareCommand = async (
 			results.push({ id: def.id, status: "unchanged" });
 			// 一致したら diff ファイル消す (要らないので)
 			fs.rmSync(diffPath, { force: true });
-		} else if (result.reason === "file-not-exists") {
-			results.push({ id: def.id, status: "missing" });
 		} else if (result.reason === "layout-diff") {
 			results.push({
 				id: def.id,
 				status: "changed",
 				reason: "layout-diff",
-				diffPath,
 			});
 		} else {
 			results.push({

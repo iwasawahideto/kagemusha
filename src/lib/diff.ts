@@ -1,4 +1,7 @@
-import { compare, type ODiffOptions, type ODiffResult } from "odiff-bin";
+import fs from "node:fs";
+import path from "node:path";
+import pixelmatch from "pixelmatch";
+import { PNG } from "pngjs";
 
 export type DiffStatus =
 	| { id: string; status: "unchanged" }
@@ -12,14 +15,62 @@ export type DiffStatus =
 			diffPath?: string;
 	  };
 
+export interface DiffOptions {
+	/** Color difference threshold per pixel (0-1). Lower = stricter. Default 0.1 */
+	pixelThreshold?: number;
+	/** Treat anti-aliased pixels as equal. Default true */
+	includeAntiAliasing?: boolean;
+}
+
+export type DiffResult =
+	| { match: true }
+	| { match: false; reason: "layout-diff" }
+	| {
+			match: false;
+			reason: "pixel-diff";
+			diffCount: number;
+			diffPercentage: number;
+	  };
+
+const readPng = (filePath: string): PNG =>
+	PNG.sync.read(fs.readFileSync(filePath));
+
+/**
+ * Compare two PNG files using pixelmatch and write the diff visualization.
+ * If dimensions differ, returns layout-diff without writing a diff image.
+ */
 export const diffImages = async (
 	baseline: string,
 	current: string,
 	diffPath: string,
-	options?: ODiffOptions,
-): Promise<ODiffResult> =>
-	compare(baseline, current, diffPath, {
-		// anti-aliasing は必ず無視 — pixel diff の偽陽性削減で最低限必要
-		antialiasing: true,
-		...options,
+	options: DiffOptions = {},
+): Promise<DiffResult> => {
+	const a = readPng(baseline);
+	const b = readPng(current);
+
+	if (a.width !== b.width || a.height !== b.height) {
+		return { match: false, reason: "layout-diff" };
+	}
+
+	const { width, height } = a;
+	const diff = new PNG({ width, height });
+
+	const diffCount = pixelmatch(a.data, b.data, diff.data, width, height, {
+		threshold: options.pixelThreshold ?? 0.1,
+		includeAA: options.includeAntiAliasing === false,
 	});
+
+	if (diffCount === 0) {
+		return { match: true };
+	}
+
+	fs.mkdirSync(path.dirname(diffPath), { recursive: true });
+	fs.writeFileSync(diffPath, PNG.sync.write(diff));
+
+	return {
+		match: false,
+		reason: "pixel-diff",
+		diffCount,
+		diffPercentage: (diffCount / (width * height)) * 100,
+	};
+};
