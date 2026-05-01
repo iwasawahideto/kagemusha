@@ -239,15 +239,15 @@ export const initCommand = async (): Promise<void> => {
 	console.log(chalk.bold.green("\n✅ Setup complete!\n"));
 	console.log(chalk.gray("Next steps:"));
 	console.log(
-		chalk.gray("  npx kagemusha capture          — Dry-run: show diffs"),
-	);
-	console.log(
 		chalk.gray(
-			"  npx kagemusha capture --apply  — Update canonical for changed",
+			"  npx kagemusha capture            — Capture & publish changed",
 		),
 	);
 	console.log(
-		chalk.gray("  npx kagemusha edit             — Edit annotations\n"),
+		chalk.gray("  npx kagemusha capture --dry-run  — Preview diffs only"),
+	);
+	console.log(
+		chalk.gray("  npx kagemusha edit               — Edit annotations\n"),
 	);
 };
 
@@ -338,7 +338,7 @@ jobs:
 
       # Pulls canonical from S3, diffs against fresh capture,
       # pushes only what changed back to S3. No screenshots/ commit needed.
-      - run: npx kagemusha capture --apply
+      - run: npx kagemusha capture
         env:
           AWS_ACCESS_KEY_ID: \${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: \${{ secrets.AWS_SECRET_ACCESS_KEY }}

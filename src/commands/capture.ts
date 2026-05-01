@@ -19,7 +19,7 @@ import {
 
 interface CaptureOptions {
 	ids?: string;
-	apply?: boolean;
+	dryRun?: boolean;
 	open?: boolean;
 	threshold?: string;
 }
@@ -46,7 +46,10 @@ const openInDefaultApp = (filePath: string): void => {
 export const captureCommand = async (
 	options: CaptureOptions,
 ): Promise<void> => {
-	console.log(chalk.bold("\n🥷 Kagemusha — Capture\n"));
+	const dryRun = options.dryRun === true;
+	console.log(
+		chalk.bold(`\n🥷 Kagemusha — Capture${dryRun ? " (dry-run)" : ""}\n`),
+	);
 
 	const projectRoot = findProjectRoot();
 	const config = loadConfig(projectRoot);
@@ -93,6 +96,21 @@ export const captureCommand = async (
 	// Track final paths (where the user can find each capture after the run)
 	const finalPathFor = new Map<string, string>();
 
+	const promote = async (
+		id: string,
+		stagingPath: string,
+		canonicalPath: string,
+	): Promise<void> => {
+		fs.mkdirSync(outputDir, { recursive: true });
+		// Push to remote first so a failure doesn't leave local ahead of S3
+		if (remote) {
+			await remote.push(id, stagingPath);
+		}
+		fs.copyFileSync(stagingPath, canonicalPath);
+		fs.rmSync(stagingPath, { force: true });
+		finalPathFor.set(id, canonicalPath);
+	};
+
 	for (const def of definitions) {
 		const canonicalPath = getCanonicalPath(config, projectRoot, def.id);
 		const stagingPath = getStagingPath(projectRoot, def.id);
@@ -110,16 +128,12 @@ export const captureCommand = async (
 				? "ok"
 				: "not-found";
 
-		// New: no canonical yet — adopt staging as canonical (only if --apply)
+		// New: no canonical yet — adopt staging as canonical (unless dry-run)
 		if (fetchResult === "not-found") {
-			if (options.apply) {
-				fs.mkdirSync(outputDir, { recursive: true });
-				fs.copyFileSync(stagingPath, canonicalPath);
-				await remote?.push(def.id, canonicalPath);
-				fs.rmSync(stagingPath, { force: true });
-				finalPathFor.set(def.id, canonicalPath);
-			} else {
+			if (dryRun) {
 				finalPathFor.set(def.id, stagingPath);
+			} else {
+				await promote(def.id, stagingPath, canonicalPath);
 			}
 			results.push({ id: def.id, status: "new" });
 			continue;
@@ -133,13 +147,10 @@ export const captureCommand = async (
 			fs.rmSync(stagingPath, { force: true });
 			finalPathFor.set(def.id, canonicalPath);
 		} else if (result.reason === "layout-diff") {
-			if (options.apply) {
-				fs.copyFileSync(stagingPath, canonicalPath);
-				await remote?.push(def.id, canonicalPath);
-				fs.rmSync(stagingPath, { force: true });
-				finalPathFor.set(def.id, canonicalPath);
-			} else {
+			if (dryRun) {
 				finalPathFor.set(def.id, stagingPath);
+			} else {
+				await promote(def.id, stagingPath, canonicalPath);
 			}
 			results.push({
 				id: def.id,
@@ -149,13 +160,10 @@ export const captureCommand = async (
 				staging: result.staging,
 			});
 		} else {
-			if (options.apply) {
-				fs.copyFileSync(stagingPath, canonicalPath);
-				await remote?.push(def.id, canonicalPath);
-				fs.rmSync(stagingPath, { force: true });
-				finalPathFor.set(def.id, canonicalPath);
-			} else {
+			if (dryRun) {
 				finalPathFor.set(def.id, stagingPath);
+			} else {
+				await promote(def.id, stagingPath, canonicalPath);
 			}
 			results.push({
 				id: def.id,
@@ -177,7 +185,7 @@ export const captureCommand = async (
 		if (r.status === "unchanged") {
 			console.log(chalk.gray(`  ✓ ${r.id}`));
 		} else if (r.status === "new") {
-			const action = options.apply ? "added to canonical" : "would be added";
+			const action = dryRun ? "would be added" : "added to canonical";
 			console.log(chalk.cyan(`  + ${r.id} (${action})`));
 		} else if (r.status === "missing") {
 			console.log(chalk.red(`  ✗ ${r.id} (capture failed)`));
@@ -186,7 +194,7 @@ export const captureCommand = async (
 				r.reason === "pixel-diff"
 					? `${r.diffPercentage.toFixed(2)}%`
 					: `layout-diff: ${r.canonical.width}×${r.canonical.height} → ${r.staging.width}×${r.staging.height}`;
-			const action = options.apply ? "→ updated" : "→ would update";
+			const action = dryRun ? "→ would update" : "→ updated";
 			console.log(
 				chalk.yellow(`  ~ ${r.id} (${detail}) ${chalk.gray(action)}`),
 			);
@@ -196,10 +204,9 @@ export const captureCommand = async (
 		}
 	}
 
-	// 4. Cleanup staging if everything got resolved (unchanged or applied)
+	// 4. Cleanup staging — applied entries are already removed individually,
+	// so this only matters when nothing changed (everything was unchanged).
 	if (changed.length === 0 && newly.length === 0) {
-		cleanupStaging(projectRoot);
-	} else if (options.apply) {
 		cleanupStaging(projectRoot);
 	}
 
@@ -211,10 +218,10 @@ export const captureCommand = async (
 		),
 	);
 
-	if (!options.apply && (changed.length > 0 || newly.length > 0)) {
+	if (dryRun && (changed.length > 0 || newly.length > 0)) {
 		console.log(
 			chalk.gray(
-				`\nRun with --apply to update canonical${remote ? ` (${remote.label()})` : ""} for changed files.`,
+				`\nDrop --dry-run to update canonical${remote ? ` (${remote.label()})` : ""}.`,
 			),
 		);
 	}
@@ -229,15 +236,17 @@ export const captureCommand = async (
 		}
 	}
 
-	// Exit code: 1 if any pixel-diff is over threshold (CI 用)
-	const overThreshold = changed.filter(
-		(r) =>
-			r.status === "changed" &&
-			r.reason === "pixel-diff" &&
-			r.diffPercentage / 100 > threshold,
-	);
-	if (overThreshold.length > 0 && !options.apply) {
-		process.exitCode = 1;
+	// Exit code: 1 if dry-run found pixel diffs over threshold (CI gate use case)
+	if (dryRun) {
+		const overThreshold = changed.filter(
+			(r) =>
+				r.status === "changed" &&
+				r.reason === "pixel-diff" &&
+				r.diffPercentage / 100 > threshold,
+		);
+		if (overThreshold.length > 0) {
+			process.exitCode = 1;
+		}
 	}
 	console.log("");
 };

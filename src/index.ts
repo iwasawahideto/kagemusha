@@ -62,12 +62,12 @@ program
 program
 	.command("capture")
 	.description(
-		"Capture screenshots, diff against canonical, and (with --apply) publish only what changed",
+		"Capture screenshots, diff against canonical, and publish only what changed (use --dry-run to preview)",
 	)
 	.option("--ids <ids>", "Comma-separated screenshot definition IDs")
 	.option(
-		"--apply",
-		"Update canonical (S3 push or local outputDir) for changed/new files",
+		"--dry-run",
+		"Preview only — capture and diff but do not update canonical (S3 push skipped)",
 	)
 	.option(
 		"--threshold <ratio>",

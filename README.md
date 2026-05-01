@@ -25,14 +25,14 @@ npm install -D @wasao/kagemusha
 # Interactive setup: config → login → discover pages → workflow
 npx kagemusha init
 
-# Dry-run: capture, diff vs canonical, show what would change
+# Capture, diff vs canonical, publish what changed (the everyday command)
 npx kagemusha capture
 
-# Apply: update canonical (S3 push or local outputDir) for changed/new files
-npx kagemusha capture --apply
+# Preview only — no canonical update, no S3 push
+npx kagemusha capture --dry-run
 ```
 
-That's it. **One verb does everything**: capture → diff → (optionally) publish.
+That's it. **One verb does everything**: capture → diff → publish (skip with `--dry-run`).
 
 ## Workflow
 
@@ -91,11 +91,11 @@ Hit **💾 Save** — both capture range and decorations are written back to `.k
 ### 4. Capture — the only verb you need
 
 ```bash
-npx kagemusha capture                  # dry-run: capture to staging, diff vs canonical
-npx kagemusha capture --apply          # update canonical for changed/new only
-npx kagemusha capture --ids a,b        # only those IDs
+npx kagemusha capture                    # capture, diff, push changed/new to canonical
+npx kagemusha capture --dry-run          # preview only, no canonical update
+npx kagemusha capture --ids a,b          # only those IDs
 npx kagemusha capture --threshold 0.001  # 0.1% pixel diff = flagged
-npx kagemusha capture --open           # open changed/new results in default viewer
+npx kagemusha capture --open             # open changed/new results in default viewer
 ```
 
 What happens:
@@ -106,10 +106,10 @@ What happens:
    - `local` mode: reads `outputDir/<id>.png` directly
 3. Diffs each staging file against canonical using [pixelmatch](https://github.com/mapbox/pixelmatch)
 4. Writes diff visualizations to `reports/diff/<id>.diff.png` for changed files
-5. **Without `--apply`**: dry-run only — canonical is untouched, exit code 1 if any pixel-diff is over threshold
-6. **With `--apply`**: for changed/new files only, copies staging → outputDir and pushes to S3 (if S3 mode). Unchanged files are left alone
+5. **Default**: for changed/new files only, pushes staging → S3 (or copies into local `outputDir/`). Unchanged files are left alone (history snapshots `<id>/<timestamp>.png` keep prior versions for rollback)
+6. **With `--dry-run`**: nothing is published — exit code 1 if any pixel-diff is over threshold (CI gate use case)
 
-Output looks like:
+Output (default — push happened):
 
 ```
 🥷 Kagemusha — Capture
@@ -118,13 +118,26 @@ Output looks like:
 📸 Capturing 3 screenshot(s) to staging...
 
   ✓ engagements-overview
-  ~ admin-groups (2.34%) → would update
+  ~ admin-groups (2.34%) → updated
       ↳ reports/diff/admin-groups.diff.png
+  + new-page (added to canonical)
+
+changed: 1 / unchanged: 1 / new: 1
+```
+
+Output (`--dry-run`):
+
+```
+🥷 Kagemusha — Capture (dry-run)
+  canonical: https://kagemusha.example.com
+
+  ✓ engagements-overview
+  ~ admin-groups (2.34%) → would update
   + new-page (would be added)
 
 changed: 1 / unchanged: 1 / new: 1
 
-Run with --apply to update canonical (https://kagemusha.example.com) for changed files.
+Drop --dry-run to update canonical (https://kagemusha.example.com).
 ```
 
 **Single canonical, kept out of git:**
@@ -151,7 +164,7 @@ reports/diff/                # diff visualizations (git-ignored)
 | `kagemusha add <path>` | Add a single screenshot definition |
 | `kagemusha list` | List all definitions, grouped by URL |
 | `kagemusha edit --id <id>` | Open the visual editor (capture range + annotations) |
-| `kagemusha capture` | Capture, diff vs canonical, optionally `--apply` to publish changed |
+| `kagemusha capture` | Capture, diff vs canonical, push changed/new (use `--dry-run` to preview) |
 | `kagemusha validate` | Validate config and definition files |
 | `kagemusha publish` | Publish to Intercom / Zendesk (coming soon) |
 
@@ -227,9 +240,9 @@ jobs:
         env:
           KAGEMUSHA_STORAGE_STATE: ${{ secrets.KAGEMUSHA_STORAGE_STATE }}
 
-      # capture --apply: pulls canonical from S3, diffs against fresh capture,
+      # capture: pulls canonical from S3, diffs against fresh capture,
       # pushes only what changed back to S3. No screenshots/ commit needed.
-      - run: npx kagemusha capture --apply
+      - run: npx kagemusha capture
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -266,7 +279,7 @@ cd example
 pnpm install            # or `npm install`, or `bun install`
 pnpm run serve          # Start sample app
 npx kagemusha init      # Set up kagemusha
-npx kagemusha capture --apply --open
+npx kagemusha capture --open
 ```
 
 ## Roadmap
@@ -277,7 +290,7 @@ npx kagemusha capture --apply --open
 - [x] Auto-discover pages (SPA-aware BFS crawl)
 - [x] Login via browser (`storageState`)
 - [x] Visual editor for capture range (fullPage / crop)
-- [x] **Visual regression — unified `capture` command (dry-run + `--apply`)**
+- [x] **Visual regression — unified `capture` command (publish by default, `--dry-run` to preview)**
 - [ ] HTML diff report (side-by-side, hosted as CI artifact)
 - [ ] Stabilization helpers (clock freezing, animation off, mask regions)
 - [ ] Slack / PR notifications with affected article IDs
