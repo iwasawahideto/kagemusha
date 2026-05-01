@@ -9,7 +9,6 @@ import { editCommand } from "./commands/edit.js";
 import { initCommand } from "./commands/init.js";
 import { listCommand } from "./commands/list.js";
 import { loginCommand } from "./commands/login.js";
-import { runCommand } from "./commands/run.js";
 import { validateCommand } from "./commands/validate.js";
 
 const BANNER = `
@@ -61,18 +60,22 @@ program
 	.action(listCommand);
 
 program
-	.command("run")
-	.description("Run full pipeline: capture → upload to S3")
-	.option("--ids <ids>", "Comma-separated screenshot definition IDs")
-	.action(runCommand);
-
-program
 	.command("capture")
-	.description("Capture screenshots (all definitions if --ids is omitted)")
+	.description(
+		"Capture screenshots, diff against canonical, and publish only what changed (use --dry-run to preview)",
+	)
 	.option("--ids <ids>", "Comma-separated screenshot definition IDs")
 	.option(
+		"--dry-run",
+		"Preview only — capture and diff but do not update canonical (S3 push skipped)",
+	)
+	.option(
+		"--threshold <ratio>",
+		"Diff ratio (0-1) above which to flag as changed; overrides config",
+	)
+	.option(
 		"--open",
-		"Open screenshots in the system default viewer (Preview / xdg-open / start)",
+		"Open changed/new results in the system default viewer (Preview / xdg-open / start)",
 	)
 	.action(captureCommand);
 
@@ -88,14 +91,6 @@ program
 	.action(validateCommand);
 
 // Phase 2 commands
-program
-	.command("compare")
-	.description(
-		`Compare screenshots with baselines (VRT) ${chalk.yellow("[coming soon]")}`,
-	)
-	.action(() => {
-		console.log(chalk.yellow("\n🚧 compare is coming in Phase 2.\n"));
-	});
 
 program
 	.command("publish")

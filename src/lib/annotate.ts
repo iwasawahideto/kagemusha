@@ -1,45 +1,5 @@
-import fs from "node:fs";
 import sharp from "sharp";
-import type {
-	CaptureResult,
-	CaptureSpec,
-	Decoration,
-	KagemushaConfig,
-	ScreenshotDefinition,
-} from "../types.js";
-
-export async function annotateScreenshots(
-	definitions: ScreenshotDefinition[],
-	results: CaptureResult[],
-	config: KagemushaConfig,
-): Promise<CaptureResult[]> {
-	const dpr = config.screenshot.defaultViewport.deviceScaleFactor ?? 2;
-	const annotatedResults: CaptureResult[] = [];
-
-	for (const result of results) {
-		const def = definitions.find((d) => d.id === result.id);
-
-		if (!def?.decorations?.length) {
-			// No decorations — copy raw as annotated
-			const annotatedPath = result.rawPath.replace(".raw.png", ".png");
-			fs.copyFileSync(result.rawPath, annotatedPath);
-			annotatedResults.push({ ...result, annotatedPath });
-			continue;
-		}
-
-		const annotatedPath = result.rawPath.replace(".raw.png", ".png");
-		await drawAnnotations(
-			result.rawPath,
-			annotatedPath,
-			def.decorations,
-			def.capture,
-			dpr,
-		);
-		annotatedResults.push({ ...result, annotatedPath });
-	}
-
-	return annotatedResults;
-}
+import type { CaptureSpec, Decoration } from "../types.js";
 
 // Decorations are saved in page-relative device-pixel coords. When the
 // captured image is a crop, we subtract the crop's top-left so the SVG overlay
@@ -54,15 +14,15 @@ const captureOffset = (
 	return { x: 0, y: 0 };
 };
 
-async function drawAnnotations(
-	inputPath: string,
+export const drawAnnotations = async (
+	input: Buffer | string,
 	outputPath: string,
 	decorations: Decoration[],
 	capture: CaptureSpec,
 	dpr: number,
-): Promise<void> {
+): Promise<void> => {
 	const offset = captureOffset(capture, dpr);
-	const image = sharp(inputPath);
+	const image = sharp(input);
 	const metadata = await image.metadata();
 	const width = metadata.width ?? 1280;
 	const height = metadata.height ?? 720;
@@ -98,21 +58,21 @@ async function drawAnnotations(
 	await image
 		.composite([{ input: Buffer.from(svgOverlay), top: 0, left: 0 }])
 		.toFile(outputPath);
-}
+};
 
 type Offset = { x: number; y: number };
 
-function renderRect(
+const renderRect = (
 	dec: Extract<Decoration, { type: "rect" }>,
 	offset: Offset,
-): string {
+): string => {
 	const color = dec.style?.color ?? "#FF0000";
 	const strokeWidth = dec.style?.strokeWidth ?? 2;
 	const borderRadius = dec.style?.borderRadius ?? 0;
 
 	if ("selector" in dec.target) {
-		// Selector-based rects need runtime resolution — use placeholder
-		// In real usage, the bounding box is resolved during capture
+		// Selector-based rects need runtime resolution — use placeholder.
+		// In real usage, the bounding box is resolved during capture.
 		return `<!-- rect: selector "${dec.target.selector}" needs runtime resolution -->`;
 	}
 
@@ -120,12 +80,12 @@ function renderRect(
 	return `<rect x="${x - offset.x}" y="${y - offset.y}" width="${width}" height="${height}"
     rx="${borderRadius}" ry="${borderRadius}"
     fill="none" stroke="${color}" stroke-width="${strokeWidth}" />`;
-}
+};
 
-function renderArrow(
+const renderArrow = (
 	dec: Extract<Decoration, { type: "arrow" }>,
 	offset: Offset,
-): string {
+): string => {
 	const color = dec.style?.color ?? "#FF0000";
 	const strokeWidth = dec.style?.strokeWidth ?? 2;
 
@@ -135,12 +95,12 @@ function renderArrow(
 	return `<line x1="${from.x - offset.x}" y1="${from.y - offset.y}" x2="${to.x - offset.x}" y2="${to.y - offset.y}"
     stroke="${color}" stroke-width="${strokeWidth}"
     marker-end="url(#arrowhead)" />`;
-}
+};
 
-function renderLabel(
+const renderLabel = (
 	dec: Extract<Decoration, { type: "label" }>,
 	offset: Offset,
-): string {
+): string => {
 	const fontSize = dec.style?.fontSize ?? 14;
 	const color = dec.style?.color ?? "#FF0000";
 	const bg = dec.style?.background ?? "#FFFFFF";
@@ -160,13 +120,12 @@ function renderLabel(
     <text x="${px}" y="${py}" font-size="${fontSize}"
       fill="${color}" font-family="sans-serif">${escapeXml(dec.text)}</text>
   `;
-}
+};
 
-function escapeXml(str: string): string {
-	return str
+const escapeXml = (str: string): string =>
+	str
 		.replace(/&/g, "&amp;")
 		.replace(/</g, "&lt;")
 		.replace(/>/g, "&gt;")
 		.replace(/"/g, "&quot;")
 		.replace(/'/g, "&apos;");
-}
