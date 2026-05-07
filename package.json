@@ -47,7 +47,9 @@
     "commander": "^13.0.0",
     "glob": "^11.0.0",
     "inquirer": "^12.0.0",
+    "pixelmatch": "^7.0.0",
     "playwright-chromium": "^1.50.0",
+    "pngjs": "^7.0.0",
     "sharp": "^0.34.5",
     "yaml": "^2.7.0"
   },
@@ -56,8 +58,16 @@
     "@types/bun": "latest",
     "@types/inquirer": "^9.0.0",
     "@types/node": "^22.0.0",
+    "@types/pixelmatch": "^5.2.6",
+    "@types/pngjs": "^6.0.5",
     "@types/sharp": "^0.32.0",
     "husky": "^9.1.7",
     "typescript": "^5.7.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "playwright-chromium",
+      "sharp"
+    ]
   }
 }

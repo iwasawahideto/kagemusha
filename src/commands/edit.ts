@@ -53,11 +53,29 @@ export async function editCommand(options: EditOptions): Promise<void> {
 	const def = definitions[0];
 
 	const { chromium } = await import("playwright-chromium");
-	const browser = await chromium.launch({ headless: false });
+	const browser = await chromium.launch({
+		headless: false,
+		args: ["--start-maximized"],
+	});
 	const context = await browser.newContext(
 		defaultContextOptions(config, projectRoot),
 	);
 	const page = await context.newPage();
+
+	// Maximize the OS window via CDP — `--start-maximized` is a hint that
+	// macOS often ignores. CDP's setWindowBounds is authoritative.
+	const cdp = await context.newCDPSession(page);
+	try {
+		const { windowId } = (await cdp.send("Browser.getWindowForTarget")) as {
+			windowId: number;
+		};
+		await cdp.send("Browser.setWindowBounds", {
+			windowId,
+			bounds: { windowState: "maximized" },
+		});
+	} catch {
+		// CDP unavailable on some channels — fall through with default size
+	}
 
 	const urlPath = def.url.replace(
 		/\{(\w+)\}/g,

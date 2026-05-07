@@ -9,7 +9,7 @@ import { discoverPages } from "../lib/crawl.js";
 import { deriveIdFromPath } from "../lib/definition.js";
 import type { KagemushaConfig, ScreenshotDefinition } from "../types.js";
 
-export async function initCommand(): Promise<void> {
+export const initCommand = async (): Promise<void> => {
 	console.log(chalk.bold("\n🥷 Kagemusha — Setup\n"));
 
 	const cwd = process.cwd();
@@ -80,7 +80,7 @@ export async function initCommand(): Promise<void> {
 		app: { baseUrl },
 		screenshot: {
 			defaultViewport: { width: 1280, height: 720, deviceScaleFactor: 2 },
-			defaultDiffThreshold: 0.5,
+			defaultDiffThreshold: 0.005,
 		},
 		publish:
 			destination === "local"
@@ -95,6 +95,10 @@ export async function initCommand(): Promise<void> {
 	);
 	console.log(chalk.green("\n✓ Created kagemusha.config.yaml"));
 
+	// Update .gitignore so canonical/staging artifacts don't pollute the repo.
+	// Canonical lives in S3 (or a local outputDir for testing) — never in git.
+	updateGitignore(cwd, outputDir);
+
 	// Step 2: Discover pages and create screenshot definitions
 
 	// Check if login is needed
@@ -107,6 +111,25 @@ export async function initCommand(): Promise<void> {
 		});
 
 		if (needsLogin) {
+			const { ciAuto } = await inquirer.prompt<{ ciAuto: boolean }>({
+				type: "confirm",
+				name: "ciAuto",
+				message:
+					"Generate a login.js skeleton for headless / CI auto-login? (recommended)",
+				default: true,
+			});
+
+			if (ciAuto) {
+				const skeletonPath = path.join(cwd, ".kagemusha", "login.mjs");
+				if (!fs.existsSync(skeletonPath)) {
+					fs.mkdirSync(path.dirname(skeletonPath), { recursive: true });
+					fs.writeFileSync(skeletonPath, generateLoginSkeleton());
+					console.log(
+						chalk.green("✓ Created .kagemusha/login.mjs (edit before use)"),
+					);
+				}
+			}
+
 			console.log(chalk.blue("\n🔐 Opening browser for login...\n"));
 			const { loginCommand } = await import("./login.js");
 			await loginCommand();
@@ -234,17 +257,96 @@ export async function initCommand(): Promise<void> {
 
 	console.log(chalk.bold.green("\n✅ Setup complete!\n"));
 	console.log(chalk.gray("Next steps:"));
-	console.log(chalk.gray("  npx kagemusha capture    — Capture screenshots"));
 	console.log(
-		chalk.gray("  npx kagemusha edit       — Edit annotations visually"),
+		chalk.gray(
+			"  npx kagemusha capture            — Capture & publish changed",
+		),
 	);
 	console.log(
-		chalk.gray("  npx kagemusha run        — Capture + upload to S3\n"),
+		chalk.gray("  npx kagemusha capture --dry-run  — Preview diffs only"),
 	);
-}
+	console.log(
+		chalk.gray("  npx kagemusha edit               — Edit annotations\n"),
+	);
+};
 
-function generateWorkflowTemplate(): string {
-	return `name: Kagemusha - Screenshot Update
+// login.mjs は team で共有されるべき (selector / フロー定義は team property)
+// なので意図的に gitignore しない。
+const GITIGNORE_ENTRIES = [
+	".kagemusha/.staging/",
+	".kagemusha/.cache/",
+	".kagemusha/auth-state.json",
+	".kagemusha/auth-meta.json",
+	".kagemusha/login-failure.png",
+	"reports/",
+];
+
+// Strip trailing slash so `screenshots` and `screenshots/` are treated as the
+// same gitignore entry (and we don't append duplicates).
+const stripTrailingSlash = (s: string): string => s.replace(/\/+$/, "");
+
+const updateGitignore = (cwd: string, outputDir: string): void => {
+	const gitignorePath = path.join(cwd, ".gitignore");
+	const existing = fs.existsSync(gitignorePath)
+		? fs.readFileSync(gitignorePath, "utf8")
+		: "";
+	const present = new Set(
+		existing
+			.split("\n")
+			.map((l) => l.trim())
+			.filter((l) => l.length > 0)
+			.map(stripTrailingSlash),
+	);
+
+	const normalizedOutputDir = outputDir
+		.replace(/^\.\//, "")
+		.replace(/\/+$/, "");
+	const entries = [...GITIGNORE_ENTRIES, `${normalizedOutputDir}/`];
+
+	const additions = entries.filter((e) => !present.has(stripTrailingSlash(e)));
+	if (additions.length === 0) return;
+
+	const block = ["", "# kagemusha", ...additions, ""];
+	const next =
+		existing.endsWith("\n") || existing === ""
+			? existing + block.join("\n")
+			: `${existing}\n${block.join("\n")}`;
+	fs.writeFileSync(gitignorePath, next);
+	console.log(
+		chalk.green(
+			`✓ Updated .gitignore (added ${additions.length} kagemusha entries)`,
+		),
+	);
+};
+
+const generateLoginSkeleton = (): string =>
+	`// Custom login flow — runs headless, called by \`kagemusha login\`.
+// Saved storage state is reused by \`kagemusha capture\` for all definitions.
+//
+// Examples:
+//   - Form login:     fill email/password, submit, wait for redirect
+//   - HTTP basic:     set extraHTTPHeaders or httpCredentials in kagemusha.config.yaml
+//   - Token-based:    inject Authorization header via extraHTTPHeaders
+//   - SSO / OAuth:    fall back to interactive \`kagemusha login\` (delete this file)
+//
+// The page already has \`baseURL\` set from kagemusha.config.yaml, so relative
+// paths work in \`page.goto('/login')\`.
+
+/** @param {import('playwright-chromium').Page} page */
+export const login = async (page) => {
+	await page.goto("/login");
+
+	await page.fill('input[name="email"]', process.env.EMAIL ?? "");
+	await page.fill('input[name="password"]', process.env.PASSWORD ?? "");
+	await page.click('button[type="submit"]');
+
+	// Wait until we leave the login URL (= login succeeded).
+	await page.waitForURL((url) => !url.pathname.startsWith("/login"));
+};
+`;
+
+const generateWorkflowTemplate = (): string =>
+	`name: Kagemusha - Screenshot Update
 
 on:
   pull_request:
@@ -252,34 +354,57 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Serialize runs so concurrent merges can't race the S3 canonical
+concurrency:
+  group: kagemusha
+  cancel-in-progress: false
+
+# OIDC is recommended over long-lived access keys.
+# To use OIDC instead: replace the AWS env vars below with
+# \`uses: aws-actions/configure-aws-credentials@v4\` + \`role-to-assume\` and
+# add the \`id-token: write\` permission.
+permissions:
+  contents: read
+
 jobs:
   update-screenshots:
     if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 20
       - run: npm ci
       - run: npx playwright install chromium
 
-      # If your app needs login: run 'kagemusha login' locally,
-      # then 'base64 -i .kagemusha/auth-state.json | pbcopy' and store it
-      # as the KAGEMUSHA_STORAGE_STATE secret. Skip this step if not needed.
-      - name: Restore login session
-        if: env.KAGEMUSHA_STORAGE_STATE != ''
-        run: |
-          mkdir -p .kagemusha
-          echo "$KAGEMUSHA_STORAGE_STATE" | base64 --decode > .kagemusha/auth-state.json
-        env:
-          KAGEMUSHA_STORAGE_STATE: \${{ secrets.KAGEMUSHA_STORAGE_STATE }}
+      # If your app needs login, kagemusha auto-runs .kagemusha/login.js
+      # (generated by \`kagemusha init\`) to create a fresh session.
+      # Set login credentials as secrets and pass them as env below.
+      #
+      # For SSO / MFA apps where scripted login isn't possible, use:
+      #   - name: Restore login session
+      #     if: env.KAGEMUSHA_STORAGE_STATE != ''
+      #     run: mkdir -p .kagemusha && echo "$KAGEMUSHA_STORAGE_STATE" | base64 --decode > .kagemusha/auth-state.json
+      #     env:
+      #       KAGEMUSHA_STORAGE_STATE: \${{ secrets.KAGEMUSHA_STORAGE_STATE }}
 
-      - run: npx kagemusha run
+      # Pulls canonical from S3, diffs against fresh capture,
+      # pushes only what changed back to S3. No screenshots/ commit needed.
+      # Region is auto-detected from publish.cdnBaseUrl in kagemusha.config.yaml.
+      - run: npx kagemusha capture
         env:
           AWS_ACCESS_KEY_ID: \${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: \${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          # Name these to match what your .kagemusha/login.js reads
+          EMAIL: \${{ secrets.EMAIL }}
+          PASSWORD: \${{ secrets.PASSWORD }}
+
+      # Keep diff visualizations as artifacts for later review
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kagemusha-diffs
+          path: reports/diff/
+          if-no-files-found: ignore
 `;
-}

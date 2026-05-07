@@ -6,6 +6,12 @@ export interface KagemushaConfig {
 		defaultViewport: Viewport;
 		defaultDiffThreshold: number;
 	};
+	auth?: {
+		// Path (project-relative) to a JS module exporting `login(page)`. When
+		// present, `kagemusha login` runs headless using this script — useful for
+		// CI. When absent, login falls back to the interactive browser flow.
+		scriptPath?: string;
+	};
 	publish?: {
 		destination: "local" | "s3" | "intercom";
 		outputDir?: string;
@@ -98,20 +104,4 @@ export interface LabelDecoration {
 		color?: string;
 		background?: string;
 	};
-}
-
-export interface CaptureResult {
-	id: string;
-	rawPath: string;
-	annotatedPath: string;
-	timestamp: string;
-}
-
-export interface CompareResult {
-	id: string;
-	status: "unchanged" | "minor" | "changed";
-	diffRate: number;
-	beforePath?: string;
-	afterPath?: string;
-	diffPath?: string;
 }

@@ -1,12 +1,29 @@
 import { spawn } from "node:child_process";
+import fs from "node:fs";
 import chalk from "chalk";
-import { annotateScreenshots } from "../lib/annotate.js";
+import { hasAuthState, resolveLoginScriptPath } from "../lib/auth.js";
+import { handleAwsError } from "../lib/aws-error.js";
+import {
+	createS3Canonical,
+	getCanonicalPath,
+	getOutputDir,
+} from "../lib/canonical.js";
 import { findProjectRoot, loadConfig, loadDefinitions } from "../lib/config.js";
+import { type DiffStatus, diffImages } from "../lib/diff.js";
 import { captureScreenshots } from "../lib/screenshot.js";
+import {
+	cleanupStaging,
+	ensureStagingDirs,
+	getReportDiffPath,
+	getStagingDir,
+	getStagingPath,
+} from "../lib/staging.js";
 
 interface CaptureOptions {
 	ids?: string;
+	dryRun?: boolean;
 	open?: boolean;
+	threshold?: string;
 }
 
 // Open a file with the OS's default viewer (Preview on macOS, etc.).
@@ -28,8 +45,25 @@ const openInDefaultApp = (filePath: string): void => {
 	}
 };
 
-export async function captureCommand(options: CaptureOptions): Promise<void> {
-	console.log(chalk.bold("\n🥷 Kagemusha — Capture screenshots\n"));
+export const captureCommand = async (
+	options: CaptureOptions,
+): Promise<void> => {
+	try {
+		await runCapture(options);
+	} catch (e) {
+		if (handleAwsError(e)) {
+			process.exitCode = 1;
+			return;
+		}
+		throw e;
+	}
+};
+
+const runCapture = async (options: CaptureOptions): Promise<void> => {
+	const dryRun = options.dryRun === true;
+	console.log(
+		chalk.bold(`\n🥷 Kagemusha — Capture${dryRun ? " (dry-run)" : ""}\n`),
+	);
 
 	const projectRoot = findProjectRoot();
 	const config = loadConfig(projectRoot);
@@ -41,29 +75,221 @@ export async function captureCommand(options: CaptureOptions): Promise<void> {
 	}
 
 	if (definitions.length === 0) {
-		console.log(chalk.yellow("No screenshot definitions found."));
+		console.log(chalk.yellow("No screenshot definitions to capture.\n"));
 		return;
 	}
 
-	console.log(
-		chalk.blue(`📸 Capturing ${definitions.length} screenshot(s)...`),
-	);
-	const results = await captureScreenshots(config, definitions, projectRoot);
-
-	console.log(chalk.blue("🎨 Drawing annotations..."));
-	const annotated = await annotateScreenshots(definitions, results, config);
-
-	console.log(
-		chalk.bold.green(`\n✅ Done! Screenshots saved to screenshots/\n`),
-	);
-
-	for (const r of annotated) {
-		console.log(chalk.gray(`  ${r.id} → ${r.annotatedPath}`));
-	}
-
-	if (options.open) {
-		for (const result of annotated) {
-			openInDefaultApp(result.annotatedPath);
+	// Auto-login: if a login script exists (auth.scriptPath, or default
+	// .kagemusha/login.mjs) but no saved session is on disk, run it before
+	// capturing. This is what makes CI work with no pre-baked storage state.
+	if (
+		!hasAuthState(projectRoot) &&
+		resolveLoginScriptPath(config, projectRoot)
+	) {
+		console.log(
+			chalk.blue("🔐 No saved session found, running login script...\n"),
+		);
+		const { loginCommand } = await import("./login.js");
+		await loginCommand();
+		// loginCommand absorbs LoginError and sets exitCode internally.
+		// If no auth-state was produced, abort capture so we don't screenshot
+		// the login screen.
+		if (!hasAuthState(projectRoot)) {
+			process.exitCode = 1;
+			return;
 		}
 	}
-}
+
+	ensureStagingDirs(projectRoot);
+
+	const threshold = options.threshold
+		? Number.parseFloat(options.threshold)
+		: (config.screenshot.defaultDiffThreshold ?? 0.005);
+
+	const remote = createS3Canonical(config);
+	const outputDir = getOutputDir(config, projectRoot);
+	const stagingDir = getStagingDir(projectRoot);
+
+	if (remote) {
+		console.log(chalk.gray(`  canonical: ${remote.label()}`));
+	} else {
+		console.log(chalk.gray(`  canonical: ${outputDir} (local)`));
+	}
+
+	// 1. Capture into staging (annotated)
+	console.log(
+		chalk.blue(
+			`\n📸 Capturing ${definitions.length} screenshot(s) to staging...\n`,
+		),
+	);
+	const failures = await captureScreenshots(config, definitions, projectRoot, {
+		outputDir: stagingDir,
+	});
+	const failureReasons = new Map(failures.map((f) => [f.id, f.reason]));
+
+	// 2. Diff each staging vs canonical
+	const results: DiffStatus[] = [];
+	// Track final paths (where the user can find each capture after the run)
+	const finalPathFor = new Map<string, string>();
+
+	const promote = async (
+		id: string,
+		stagingPath: string,
+		canonicalPath: string,
+	): Promise<void> => {
+		fs.mkdirSync(outputDir, { recursive: true });
+		// Push to remote first so a failure doesn't leave local ahead of S3
+		if (remote) {
+			await remote.push(id, stagingPath);
+		}
+		fs.copyFileSync(stagingPath, canonicalPath);
+		fs.rmSync(stagingPath, { force: true });
+		finalPathFor.set(id, canonicalPath);
+	};
+
+	// Either copy staging → canonical (default), or just remember the staging
+	// path so the user can inspect it (dry-run).
+	const applyOrStage = async (
+		id: string,
+		stagingPath: string,
+		canonicalPath: string,
+	): Promise<void> => {
+		if (dryRun) {
+			finalPathFor.set(id, stagingPath);
+		} else {
+			await promote(id, stagingPath, canonicalPath);
+		}
+	};
+
+	for (const def of definitions) {
+		const canonicalPath = getCanonicalPath(config, projectRoot, def.id);
+		const stagingPath = getStagingPath(projectRoot, def.id);
+		const diffPath = getReportDiffPath(projectRoot, def.id);
+
+		if (!fs.existsSync(stagingPath)) {
+			results.push({
+				id: def.id,
+				status: "missing",
+				reason: failureReasons.get(def.id),
+			});
+			continue;
+		}
+
+		// Pull canonical from remote (S3) into outputDir; for local mode just check existence
+		const fetchResult = remote
+			? await remote.fetch(def.id, canonicalPath)
+			: fs.existsSync(canonicalPath)
+				? "ok"
+				: "not-found";
+
+		// New: no canonical yet — adopt staging as canonical (unless dry-run)
+		if (fetchResult === "not-found") {
+			await applyOrStage(def.id, stagingPath, canonicalPath);
+			results.push({ id: def.id, status: "new" });
+			continue;
+		}
+
+		const result = await diffImages(canonicalPath, stagingPath, diffPath);
+
+		if (result.match) {
+			results.push({ id: def.id, status: "unchanged" });
+			fs.rmSync(diffPath, { force: true });
+			fs.rmSync(stagingPath, { force: true });
+			finalPathFor.set(def.id, canonicalPath);
+		} else if (result.reason === "layout-diff") {
+			await applyOrStage(def.id, stagingPath, canonicalPath);
+			results.push({
+				id: def.id,
+				status: "changed",
+				reason: "layout-diff",
+				canonical: result.canonical,
+				staging: result.staging,
+			});
+		} else {
+			await applyOrStage(def.id, stagingPath, canonicalPath);
+			results.push({
+				id: def.id,
+				status: "changed",
+				reason: "pixel-diff",
+				diffPercentage: result.diffPercentage,
+				diffPath,
+			});
+		}
+	}
+
+	// 3. Print summary
+	const changed = results.filter((r) => r.status === "changed");
+	const unchanged = results.filter((r) => r.status === "unchanged");
+	const newly = results.filter((r) => r.status === "new");
+	const missing = results.filter((r) => r.status === "missing");
+
+	for (const r of results) {
+		if (r.status === "unchanged") {
+			console.log(chalk.gray(`  ✓ ${r.id}`));
+		} else if (r.status === "new") {
+			const action = dryRun ? "would be added" : "added to canonical";
+			console.log(chalk.cyan(`  + ${r.id} (${action})`));
+		} else if (r.status === "missing") {
+			const detail = r.reason ? `: ${r.reason}` : "";
+			console.log(chalk.red(`  ✗ ${r.id} (capture failed${detail})`));
+		} else if (r.status === "changed") {
+			const detail =
+				r.reason === "pixel-diff"
+					? `${r.diffPercentage.toFixed(2)}%`
+					: `layout-diff: ${r.canonical.width}×${r.canonical.height} → ${r.staging.width}×${r.staging.height}`;
+			const action = dryRun ? "→ would update" : "→ updated";
+			console.log(
+				chalk.yellow(`  ~ ${r.id} (${detail}) ${chalk.gray(action)}`),
+			);
+			if (r.reason === "pixel-diff") {
+				console.log(chalk.gray(`      ↳ ${r.diffPath}`));
+			}
+		}
+	}
+
+	// 4. Cleanup staging — applied entries are already removed individually,
+	// so this only matters when nothing changed (everything was unchanged).
+	if (changed.length === 0 && newly.length === 0) {
+		cleanupStaging(projectRoot);
+	}
+
+	console.log("");
+	console.log(
+		chalk.bold(
+			`changed: ${changed.length} / unchanged: ${unchanged.length} / new: ${newly.length}` +
+				(missing.length > 0 ? ` / missing: ${missing.length}` : ""),
+		),
+	);
+
+	if (dryRun && (changed.length > 0 || newly.length > 0)) {
+		console.log(
+			chalk.gray(
+				`\nDrop --dry-run to update canonical${remote ? ` (${remote.label()})` : ""}.`,
+			),
+		);
+	}
+
+	// 5. Open changed/new results in default viewer
+	if (options.open) {
+		for (const r of [...changed, ...newly]) {
+			const p = finalPathFor.get(r.id);
+			if (p && fs.existsSync(p)) {
+				openInDefaultApp(p);
+			}
+		}
+	}
+
+	// Exit code: 1 if dry-run found pixel diffs over threshold (CI gate use case)
+	if (dryRun) {
+		const overThreshold = changed.filter(
+			(r) =>
+				r.status === "changed" &&
+				r.reason === "pixel-diff" &&
+				r.diffPercentage / 100 > threshold,
+		);
+		if (overThreshold.length > 0) {
+			process.exitCode = 1;
+		}
+	}
+	console.log("");
+};

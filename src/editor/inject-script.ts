@@ -68,10 +68,25 @@ let nextId = 1;
 // Capture state — persisted on save (in page CSS pixels, NOT DPR-scaled)
 let captureMode: "fullPage" | "crop" = "fullPage";
 let captureCrop: { x: number; y: number; w: number; h: number } | null = null;
-let cropDragState: {
-	sx: number;
-	sy: number;
-} | null = null;
+type CropHandle = "nw" | "ne" | "sw" | "se" | "n" | "s" | "e" | "w";
+type CropDragState =
+	| { kind: "create"; sx: number; sy: number }
+	| {
+			kind: "move";
+			sx: number;
+			sy: number;
+			orig: { x: number; y: number; w: number; h: number };
+	  }
+	| {
+			kind: "resize";
+			handle: CropHandle;
+			sx: number;
+			sy: number;
+			orig: { x: number; y: number; w: number; h: number };
+	  };
+let cropDragState: CropDragState | null = null;
+const HANDLE_SIZE = 10;
+const MIN_CROP = 10;
 
 // --- TOOLBAR ---
 const toolbar = document.createElement("div");
@@ -106,6 +121,13 @@ toolbar.innerHTML = `
     #kagemusha-svg-layer.cropping .annotation { pointer-events: none; }
     #kagemusha-svg-layer .annotation.selected { filter: drop-shadow(0 0 3px #6366f1); }
     #kagemusha-svg-layer .capture-crop-box { fill: rgba(14,165,233,0.10); stroke: #0ea5e9; stroke-width: 2; stroke-dasharray: 8 4; pointer-events: none; }
+    #kagemusha-svg-layer.cropping .capture-crop-box { pointer-events: auto; cursor: move; }
+    #kagemusha-svg-layer .crop-handle { fill: #fff; stroke: #0ea5e9; stroke-width: 2; pointer-events: none; }
+    #kagemusha-svg-layer.cropping .crop-handle { pointer-events: auto; }
+    #kagemusha-svg-layer .crop-handle.nw, #kagemusha-svg-layer .crop-handle.se { cursor: nwse-resize; }
+    #kagemusha-svg-layer .crop-handle.ne, #kagemusha-svg-layer .crop-handle.sw { cursor: nesw-resize; }
+    #kagemusha-svg-layer .crop-handle.n, #kagemusha-svg-layer .crop-handle.s { cursor: ns-resize; }
+    #kagemusha-svg-layer .crop-handle.e, #kagemusha-svg-layer .crop-handle.w { cursor: ew-resize; }
     .kagemusha-hint {
       position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
       color: #fff; background: rgba(0,0,0,0.7); padding: 6px 16px; border-radius: 8px;
@@ -244,35 +266,49 @@ const clearCaptureVisual = () => {
 	captureGroup.replaceChildren();
 };
 
-const drawCaptureRect = (
-	x: number,
-	y: number,
-	w: number,
-	h: number,
-	className: string,
-) => {
-	clearCaptureVisual();
-	const r = document.createElementNS(svgNS, "rect");
-	r.setAttribute("x", String(x));
-	r.setAttribute("y", String(y));
-	r.setAttribute("width", String(w));
-	r.setAttribute("height", String(h));
-	r.setAttribute("class", className);
-	captureGroup.appendChild(r);
-};
+const HANDLE_POSITIONS: ReadonlyArray<{
+	handle: CropHandle;
+	pos: (c: { x: number; y: number; w: number; h: number }) => {
+		cx: number;
+		cy: number;
+	};
+}> = [
+	{ handle: "nw", pos: (c) => ({ cx: c.x, cy: c.y }) },
+	{ handle: "n", pos: (c) => ({ cx: c.x + c.w / 2, cy: c.y }) },
+	{ handle: "ne", pos: (c) => ({ cx: c.x + c.w, cy: c.y }) },
+	{ handle: "e", pos: (c) => ({ cx: c.x + c.w, cy: c.y + c.h / 2 }) },
+	{ handle: "se", pos: (c) => ({ cx: c.x + c.w, cy: c.y + c.h }) },
+	{ handle: "s", pos: (c) => ({ cx: c.x + c.w / 2, cy: c.y + c.h }) },
+	{ handle: "sw", pos: (c) => ({ cx: c.x, cy: c.y + c.h }) },
+	{ handle: "w", pos: (c) => ({ cx: c.x, cy: c.y + c.h / 2 }) },
+];
 
 const redrawCropVisual = () => {
 	if (captureMode !== "crop" || !captureCrop) {
 		clearCaptureVisual();
 		return;
 	}
-	drawCaptureRect(
-		captureCrop.x,
-		captureCrop.y,
-		captureCrop.w,
-		captureCrop.h,
-		"capture-crop-box",
-	);
+	clearCaptureVisual();
+
+	const r = document.createElementNS(svgNS, "rect");
+	r.setAttribute("x", String(captureCrop.x));
+	r.setAttribute("y", String(captureCrop.y));
+	r.setAttribute("width", String(captureCrop.w));
+	r.setAttribute("height", String(captureCrop.h));
+	r.setAttribute("class", "capture-crop-box");
+	captureGroup.appendChild(r);
+
+	for (const { handle, pos } of HANDLE_POSITIONS) {
+		const { cx, cy } = pos(captureCrop);
+		const h = document.createElementNS(svgNS, "rect");
+		h.setAttribute("x", String(cx - HANDLE_SIZE / 2));
+		h.setAttribute("y", String(cy - HANDLE_SIZE / 2));
+		h.setAttribute("width", String(HANDLE_SIZE));
+		h.setAttribute("height", String(HANDLE_SIZE));
+		h.setAttribute("class", `crop-handle ${handle}`);
+		h.dataset.handle = handle;
+		captureGroup.appendChild(h);
+	}
 };
 
 const updateCaptureUi = () => {
@@ -371,7 +407,38 @@ svg.addEventListener("mousedown", (e: MouseEvent) => {
 	if (tool === "crop") {
 		e.preventDefault();
 		deselectAll();
-		cropDragState = { sx: p.x, sy: p.y };
+
+		const target = e.target as Element;
+		const handleAttr = (target as HTMLElement).dataset?.handle as
+			| CropHandle
+			| undefined;
+
+		// Resize from a handle
+		if (handleAttr && captureCrop) {
+			cropDragState = {
+				kind: "resize",
+				handle: handleAttr,
+				sx: p.x,
+				sy: p.y,
+				orig: { ...captureCrop },
+			};
+			return;
+		}
+
+		// Move the existing crop body
+		if (target?.classList?.contains("capture-crop-box") && captureCrop) {
+			cropDragState = {
+				kind: "move",
+				sx: p.x,
+				sy: p.y,
+				orig: { ...captureCrop },
+			};
+			return;
+		}
+
+		// Otherwise: drag-to-create new crop (replaces existing)
+		cropDragState = { kind: "create", sx: p.x, sy: p.y };
+		captureCrop = null;
 		clearCaptureVisual();
 		const r = document.createElementNS(svgNS, "rect");
 		r.setAttribute("x", String(p.x));
@@ -460,17 +527,66 @@ svg.addEventListener("mousedown", (e: MouseEvent) => {
 document.addEventListener("mousemove", (e: MouseEvent) => {
 	if (cropDragState) {
 		const p = getPos(e);
-		const x = Math.min(cropDragState.sx, p.x);
-		const y = Math.min(cropDragState.sy, p.y);
-		const w = Math.abs(p.x - cropDragState.sx);
-		const h = Math.abs(p.y - cropDragState.sy);
-		const r = captureGroup.firstChild as SVGRectElement | null;
-		if (r) {
-			r.setAttribute("x", String(x));
-			r.setAttribute("y", String(y));
-			r.setAttribute("width", String(w));
-			r.setAttribute("height", String(h));
+		if (cropDragState.kind === "create") {
+			const x = Math.min(cropDragState.sx, p.x);
+			const y = Math.min(cropDragState.sy, p.y);
+			const w = Math.abs(p.x - cropDragState.sx);
+			const h = Math.abs(p.y - cropDragState.sy);
+			const r = captureGroup.firstChild as SVGRectElement | null;
+			if (r) {
+				r.setAttribute("x", String(x));
+				r.setAttribute("y", String(y));
+				r.setAttribute("width", String(w));
+				r.setAttribute("height", String(h));
+			}
+			return;
 		}
+		if (cropDragState.kind === "move") {
+			const dx = p.x - cropDragState.sx;
+			const dy = p.y - cropDragState.sy;
+			captureCrop = {
+				x: cropDragState.orig.x + dx,
+				y: cropDragState.orig.y + dy,
+				w: cropDragState.orig.w,
+				h: cropDragState.orig.h,
+			};
+			redrawCropVisual();
+			return;
+		}
+		// resize
+		const dx = p.x - cropDragState.sx;
+		const dy = p.y - cropDragState.sy;
+		const o = cropDragState.orig;
+		let nx = o.x;
+		let ny = o.y;
+		let nw = o.w;
+		let nh = o.h;
+		const h = cropDragState.handle;
+		if (h.includes("w")) {
+			nx = o.x + dx;
+			nw = o.w - dx;
+		}
+		if (h.includes("e")) {
+			nw = o.w + dx;
+		}
+		if (h.includes("n")) {
+			ny = o.y + dy;
+			nh = o.h - dy;
+		}
+		if (h.includes("s")) {
+			nh = o.h + dy;
+		}
+		// Keep min size and prevent flip-through
+		if (nw < MIN_CROP) {
+			if (h.includes("w")) nx = o.x + (o.w - MIN_CROP);
+			nw = MIN_CROP;
+		}
+		if (nh < MIN_CROP) {
+			if (h.includes("n")) ny = o.y + (o.h - MIN_CROP);
+			nh = MIN_CROP;
+		}
+		captureCrop = { x: nx, y: ny, w: nw, h: nh };
+		redrawCropVisual();
 		return;
 	}
 
@@ -529,21 +645,25 @@ document.addEventListener("mousemove", (e: MouseEvent) => {
 // --- MOUSE: UP ---
 document.addEventListener("mouseup", (e: MouseEvent) => {
 	if (cropDragState) {
-		const p = getPos(e);
-		const w = Math.abs(p.x - cropDragState.sx);
-		const h = Math.abs(p.y - cropDragState.sy);
-		if (w < 5 || h < 5) {
-			cropDragState = null;
-			redrawCropVisual();
-			return;
+		if (cropDragState.kind === "create") {
+			const p = getPos(e);
+			const w = Math.abs(p.x - cropDragState.sx);
+			const h = Math.abs(p.y - cropDragState.sy);
+			if (w < 5 || h < 5) {
+				cropDragState = null;
+				redrawCropVisual();
+				return;
+			}
+			captureCrop = {
+				x: Math.min(cropDragState.sx, p.x),
+				y: Math.min(cropDragState.sy, p.y),
+				w,
+				h,
+			};
 		}
-		captureCrop = {
-			x: Math.min(cropDragState.sx, p.x),
-			y: Math.min(cropDragState.sy, p.y),
-			w,
-			h,
-		};
+		// move / resize: state is already applied via redrawCropVisual on mousemove
 		cropDragState = null;
+		redrawCropVisual();
 		return;
 	}
 
