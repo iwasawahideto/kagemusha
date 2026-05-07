@@ -2,17 +2,17 @@ import fs from "node:fs";
 import path from "node:path";
 import type {
 	CaptureAction,
-	CaptureResult,
 	KagemushaConfig,
 	ScreenshotDefinition,
 } from "../types.js";
+import { drawAnnotations } from "./annotate.js";
 import { defaultContextOptions } from "./auth.js";
+import { getOutputDir } from "./canonical.js";
 
-type Browser = import("playwright-chromium").Browser;
 type Page = import("playwright-chromium").Page;
 type BrowserContext = import("playwright-chromium").BrowserContext;
 
-async function loadPlaywright() {
+const loadPlaywright = async () => {
 	try {
 		return await import("playwright-chromium");
 	} catch {
@@ -21,29 +21,28 @@ async function loadPlaywright() {
 				"Install it with: npm install -D playwright && npx playwright install chromium",
 		);
 	}
-}
+};
 
-const SCREENSHOTS_DIR = "screenshots";
-
-export async function captureScreenshots(
+export const captureScreenshots = async (
 	config: KagemushaConfig,
 	definitions: ScreenshotDefinition[],
 	projectRoot: string,
-): Promise<CaptureResult[]> {
-	const outputDir = path.join(projectRoot, SCREENSHOTS_DIR);
+	options: { outputDir?: string } = {},
+): Promise<void> => {
+	const outputDir = options.outputDir ?? getOutputDir(config, projectRoot);
 	fs.mkdirSync(outputDir, { recursive: true });
 
 	const { chromium } = await loadPlaywright();
 	const browser = await chromium.launch({ headless: true });
-	const results: CaptureResult[] = [];
 
 	try {
-		const context = await createContext(browser, config, projectRoot);
+		const context = await browser.newContext(
+			defaultContextOptions(config, projectRoot),
+		);
 
 		for (const def of definitions) {
 			try {
-				const result = await captureOne(context, config, def, outputDir);
-				results.push(result);
+				await captureOne(context, config, def, outputDir);
 			} catch (e) {
 				console.error(`  ⚠ ${def.id}: ${e instanceof Error ? e.message : e}`);
 			}
@@ -53,24 +52,14 @@ export async function captureScreenshots(
 	} finally {
 		await browser.close();
 	}
+};
 
-	return results;
-}
-
-async function createContext(
-	browser: Browser,
-	config: KagemushaConfig,
-	projectRoot: string,
-): Promise<BrowserContext> {
-	return browser.newContext(defaultContextOptions(config, projectRoot));
-}
-
-async function captureOne(
+const captureOne = async (
 	context: BrowserContext,
 	config: KagemushaConfig,
 	def: ScreenshotDefinition,
 	outputDir: string,
-): Promise<CaptureResult> {
+): Promise<void> => {
 	const page = await context.newPage();
 
 	if (def.viewport) {
@@ -91,35 +80,29 @@ async function captureOne(
 		await executeActions(page, def.beforeCapture);
 	}
 
-	const rawPath = path.join(outputDir, `${def.id}.raw.png`);
-	await takeScreenshot(page, def, rawPath);
-
+	const buffer = await takeScreenshotBuffer(page, def);
 	await page.close();
 
-	const timestamp = new Date().toISOString();
+	const finalPath = path.join(outputDir, `${def.id}.png`);
+	if (def.decorations?.length) {
+		const dpr = config.screenshot.defaultViewport.deviceScaleFactor ?? 2;
+		await drawAnnotations(buffer, finalPath, def.decorations, def.capture, dpr);
+	} else {
+		fs.writeFileSync(finalPath, buffer);
+	}
+};
 
-	return {
-		id: def.id,
-		rawPath,
-		annotatedPath: rawPath, // annotate step will create the final version
-		timestamp,
-	};
-}
-
-async function takeScreenshot(
+const takeScreenshotBuffer = async (
 	page: Page,
 	def: ScreenshotDefinition,
-	outputPath: string,
-): Promise<void> {
+): Promise<Buffer> => {
 	switch (def.capture.mode) {
 		case "fullPage":
-			await page.screenshot({ path: outputPath, fullPage: true });
-			break;
+			return await page.screenshot({ fullPage: true });
 
 		case "crop": {
 			const { start, end } = def.capture.crop;
-			await page.screenshot({
-				path: outputPath,
+			return await page.screenshot({
 				clip: {
 					x: start.x,
 					y: start.y,
@@ -127,23 +110,20 @@ async function takeScreenshot(
 					height: end.y - start.y,
 				},
 			});
-			break;
 		}
 
-		default: {
-			// Backward-compat: legacy "selector" mode (now removed) — fall back to fullPage
+		default:
 			console.warn(
 				`  ⚠ ${def.id}: unknown capture mode "${(def.capture as { mode: string }).mode}", falling back to fullPage.`,
 			);
-			await page.screenshot({ path: outputPath, fullPage: true });
-		}
+			return await page.screenshot({ fullPage: true });
 	}
-}
+};
 
-async function executeActions(
+const executeActions = async (
 	page: Page,
 	actions: CaptureAction[],
-): Promise<void> {
+): Promise<void> => {
 	for (const action of actions) {
 		switch (action.action) {
 			case "click":
@@ -185,9 +165,9 @@ async function executeActions(
 				break;
 		}
 	}
-}
+};
 
-async function hideElements(page: Page, selectors: string[]): Promise<void> {
+const hideElements = async (page: Page, selectors: string[]): Promise<void> => {
 	for (const selector of selectors) {
 		await page.evaluate((sel) => {
 			document.querySelectorAll(sel).forEach((el) => {
@@ -195,13 +175,13 @@ async function hideElements(page: Page, selectors: string[]): Promise<void> {
 			});
 		}, selector);
 	}
-}
+};
 
-function resolveUrl(
+const resolveUrl = (
 	baseUrl: string,
 	urlPath: string,
 	params?: Record<string, string>,
-): string {
+): string => {
 	let resolved = urlPath;
 	if (params) {
 		for (const [key, value] of Object.entries(params)) {
@@ -209,4 +189,4 @@ function resolveUrl(
 		}
 	}
 	return new URL(resolved, baseUrl).toString();
-}
+};
