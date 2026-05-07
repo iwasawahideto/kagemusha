@@ -28,17 +28,18 @@ export const getCanonicalPath = (
 
 export type FetchResult = "ok" | "not-found";
 
-/**
- * S3-backed canonical store.
- * Local mode has no remote — outputDir itself is the source of truth.
- */
-export // Extract AWS region from a virtual-hosted–style S3 URL or s3.<region>.amazonaws.com endpoint.
+// Extract AWS region from a virtual-hosted–style S3 URL or s3.<region>.amazonaws.com endpoint.
 // Returns undefined for legacy global URLs (s3.amazonaws.com) or custom CDN domains.
 const extractRegionFromCdnBase = (cdnBaseUrl?: string): string | undefined => {
 	if (!cdnBaseUrl) return undefined;
 	const m = cdnBaseUrl.match(/\.s3[.-]([a-z0-9-]+)\.amazonaws\.com/i);
 	return m?.[1];
 };
+
+/**
+ * S3-backed canonical store.
+ * Local mode has no remote — outputDir itself is the source of truth.
+ */
 
 export class S3Canonical {
 	private readonly client: S3Client;
@@ -86,8 +87,10 @@ export class S3Canonical {
 				CacheControl: "no-cache",
 			}),
 		);
-		// History snapshot for debug / rollback
-		const historyKey = `${id}/${new Date().toISOString()}.png`;
+		// History snapshot for debug / rollback. Replace `:` so the key works
+		// in URLs without %3A encoding (S3 accepts it but URL-embedding breaks).
+		const timestamp = new Date().toISOString().replaceAll(":", "-");
+		const historyKey = `${id}/${timestamp}.png`;
 		await this.client.send(
 			new PutObjectCommand({
 				Bucket: this.bucket,

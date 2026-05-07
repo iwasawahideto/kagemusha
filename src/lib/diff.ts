@@ -11,7 +11,7 @@ export interface Dimensions {
 export type DiffStatus =
 	| { id: string; status: "unchanged" }
 	| { id: string; status: "new" }
-	| { id: string; status: "missing" }
+	| { id: string; status: "missing"; reason?: string }
 	| {
 			id: string;
 			status: "changed";
@@ -30,8 +30,8 @@ export type DiffStatus =
 export interface DiffOptions {
 	/** Color difference threshold per pixel (0-1). Lower = stricter. Default 0.1 */
 	pixelThreshold?: number;
-	/** Treat anti-aliased pixels as equal. Default true */
-	includeAntiAliasing?: boolean;
+	/** Ignore anti-aliased pixels (treat them as equal). Default true */
+	ignoreAntiAliasing?: boolean;
 }
 
 export type DiffResult =
@@ -79,7 +79,9 @@ export const diffImages = async (
 
 	const diffCount = pixelmatch(a.data, b.data, diff.data, width, height, {
 		threshold: options.pixelThreshold ?? 0.1,
-		includeAA: options.includeAntiAliasing === false,
+		// pixelmatch's `includeAA: true` means "check AA pixels" (= flag them).
+		// Our `ignoreAntiAliasing` defaults true (= skip AA), so we invert.
+		includeAA: options.ignoreAntiAliasing === false,
 	});
 
 	if (diffCount === 0) {

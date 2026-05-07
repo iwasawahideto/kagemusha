@@ -23,17 +23,23 @@ const loadPlaywright = async () => {
 	}
 };
 
+export interface CaptureFailure {
+	id: string;
+	reason: string;
+}
+
 export const captureScreenshots = async (
 	config: KagemushaConfig,
 	definitions: ScreenshotDefinition[],
 	projectRoot: string,
 	options: { outputDir?: string } = {},
-): Promise<void> => {
+): Promise<CaptureFailure[]> => {
 	const outputDir = options.outputDir ?? getOutputDir(config, projectRoot);
 	fs.mkdirSync(outputDir, { recursive: true });
 
 	const { chromium } = await loadPlaywright();
 	const browser = await chromium.launch({ headless: true });
+	const failures: CaptureFailure[] = [];
 
 	try {
 		const context = await browser.newContext(
@@ -44,7 +50,9 @@ export const captureScreenshots = async (
 			try {
 				await captureOne(context, config, def, outputDir);
 			} catch (e) {
-				console.error(`  ⚠ ${def.id}: ${e instanceof Error ? e.message : e}`);
+				const reason = e instanceof Error ? e.message : String(e);
+				failures.push({ id: def.id, reason });
+				console.error(`  ⚠ ${def.id}: ${reason}`);
 			}
 		}
 
@@ -52,6 +60,8 @@ export const captureScreenshots = async (
 	} finally {
 		await browser.close();
 	}
+
+	return failures;
 };
 
 const captureOne = async (

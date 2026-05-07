@@ -9,6 +9,7 @@ import {
 	resolveLoginScriptPath,
 } from "../lib/auth.js";
 import { findProjectRoot, loadConfig } from "../lib/config.js";
+import { LoginError } from "../lib/login-error.js";
 import type { KagemushaConfig } from "../types.js";
 
 type Page = import("playwright-chromium").Page;
@@ -28,10 +29,20 @@ export const loginCommand = async (
 	const config = loadConfig(projectRoot);
 	const scriptPath = resolveLoginScriptPath(config, projectRoot);
 
-	if (scriptPath) {
-		await runScriptedLogin(scriptPath, config, projectRoot, options);
-	} else {
-		await runInteractiveLogin(config, projectRoot);
+	try {
+		if (scriptPath) {
+			await runScriptedLogin(scriptPath, config, projectRoot, options);
+		} else {
+			await runInteractiveLogin(config, projectRoot);
+		}
+	} catch (e) {
+		if (e instanceof LoginError) {
+			// Friendly message + screenshot already printed inside runScriptedLogin.
+			// Just signal failure via exit code without dumping a stack.
+			process.exitCode = 1;
+			return;
+		}
+		throw e;
 	}
 };
 
@@ -91,11 +102,11 @@ const runScriptedLogin = async (
 				chalk.yellow(
 					`\nHint:\n` +
 						`  - Re-run with --headed to watch: \`kagemusha login --headed\`\n` +
-						`  - Verify form selectors in .kagemusha/login.js match the live page\n` +
+						`  - Verify form selectors in .kagemusha/login.mjs match the live page\n` +
 						`  - Check that EMAIL / PASSWORD env vars are correct`,
 				),
 			);
-			throw e;
+			throw new LoginError(`login script threw: ${formatError(e)}`);
 		}
 
 		const landingUrl = page.url();
@@ -111,12 +122,24 @@ const runScriptedLogin = async (
 			await page
 				.screenshot({ path: screenshotPath, fullPage: true })
 				.catch(() => {});
-			throw new Error(
-				`Login script completed but the page is still on ${landingPath}.\n` +
-					`  Screenshot: ${path.relative(projectRoot, screenshotPath)}\n` +
-					`  Hint: re-run with \`kagemusha login --headed\` to see the live flow,\n` +
-					`        and verify selectors / credentials in .kagemusha/login.js.`,
+			console.error(
+				chalk.red(
+					`\n✗ Login script completed but the page is still on ${landingPath}.`,
+				),
 			);
+			console.error(
+				chalk.gray(
+					`  Screenshot: ${path.relative(projectRoot, screenshotPath)}`,
+				),
+			);
+			console.error(
+				chalk.yellow(
+					`\nHint:\n` +
+						`  - Re-run with \`kagemusha login --headed\` to see the live flow\n` +
+						`  - Verify selectors / credentials in .kagemusha/login.mjs`,
+				),
+			);
+			throw new LoginError(`stuck on ${landingPath} after login script`);
 		}
 
 		// Verify the storageState actually has cookies (= a session was established).

@@ -80,7 +80,7 @@ const runCapture = async (options: CaptureOptions): Promise<void> => {
 	}
 
 	// Auto-login: if a login script exists (auth.scriptPath, or default
-	// .kagemusha/login.js) but no saved session is on disk, run it before
+	// .kagemusha/login.mjs) but no saved session is on disk, run it before
 	// capturing. This is what makes CI work with no pre-baked storage state.
 	if (
 		!hasAuthState(projectRoot) &&
@@ -91,6 +91,13 @@ const runCapture = async (options: CaptureOptions): Promise<void> => {
 		);
 		const { loginCommand } = await import("./login.js");
 		await loginCommand();
+		// loginCommand absorbs LoginError and sets exitCode internally.
+		// If no auth-state was produced, abort capture so we don't screenshot
+		// the login screen.
+		if (!hasAuthState(projectRoot)) {
+			process.exitCode = 1;
+			return;
+		}
 	}
 
 	ensureStagingDirs(projectRoot);
@@ -115,9 +122,10 @@ const runCapture = async (options: CaptureOptions): Promise<void> => {
 			`\n📸 Capturing ${definitions.length} screenshot(s) to staging...\n`,
 		),
 	);
-	await captureScreenshots(config, definitions, projectRoot, {
+	const failures = await captureScreenshots(config, definitions, projectRoot, {
 		outputDir: stagingDir,
 	});
+	const failureReasons = new Map(failures.map((f) => [f.id, f.reason]));
 
 	// 2. Diff each staging vs canonical
 	const results: DiffStatus[] = [];
@@ -139,13 +147,31 @@ const runCapture = async (options: CaptureOptions): Promise<void> => {
 		finalPathFor.set(id, canonicalPath);
 	};
 
+	// Either copy staging → canonical (default), or just remember the staging
+	// path so the user can inspect it (dry-run).
+	const applyOrStage = async (
+		id: string,
+		stagingPath: string,
+		canonicalPath: string,
+	): Promise<void> => {
+		if (dryRun) {
+			finalPathFor.set(id, stagingPath);
+		} else {
+			await promote(id, stagingPath, canonicalPath);
+		}
+	};
+
 	for (const def of definitions) {
 		const canonicalPath = getCanonicalPath(config, projectRoot, def.id);
 		const stagingPath = getStagingPath(projectRoot, def.id);
 		const diffPath = getReportDiffPath(projectRoot, def.id);
 
 		if (!fs.existsSync(stagingPath)) {
-			results.push({ id: def.id, status: "missing" });
+			results.push({
+				id: def.id,
+				status: "missing",
+				reason: failureReasons.get(def.id),
+			});
 			continue;
 		}
 
@@ -158,11 +184,7 @@ const runCapture = async (options: CaptureOptions): Promise<void> => {
 
 		// New: no canonical yet — adopt staging as canonical (unless dry-run)
 		if (fetchResult === "not-found") {
-			if (dryRun) {
-				finalPathFor.set(def.id, stagingPath);
-			} else {
-				await promote(def.id, stagingPath, canonicalPath);
-			}
+			await applyOrStage(def.id, stagingPath, canonicalPath);
 			results.push({ id: def.id, status: "new" });
 			continue;
 		}
@@ -175,11 +197,7 @@ const runCapture = async (options: CaptureOptions): Promise<void> => {
 			fs.rmSync(stagingPath, { force: true });
 			finalPathFor.set(def.id, canonicalPath);
 		} else if (result.reason === "layout-diff") {
-			if (dryRun) {
-				finalPathFor.set(def.id, stagingPath);
-			} else {
-				await promote(def.id, stagingPath, canonicalPath);
-			}
+			await applyOrStage(def.id, stagingPath, canonicalPath);
 			results.push({
 				id: def.id,
 				status: "changed",
@@ -188,11 +206,7 @@ const runCapture = async (options: CaptureOptions): Promise<void> => {
 				staging: result.staging,
 			});
 		} else {
-			if (dryRun) {
-				finalPathFor.set(def.id, stagingPath);
-			} else {
-				await promote(def.id, stagingPath, canonicalPath);
-			}
+			await applyOrStage(def.id, stagingPath, canonicalPath);
 			results.push({
 				id: def.id,
 				status: "changed",
@@ -216,7 +230,8 @@ const runCapture = async (options: CaptureOptions): Promise<void> => {
 			const action = dryRun ? "would be added" : "added to canonical";
 			console.log(chalk.cyan(`  + ${r.id} (${action})`));
 		} else if (r.status === "missing") {
-			console.log(chalk.red(`  ✗ ${r.id} (capture failed)`));
+			const detail = r.reason ? `: ${r.reason}` : "";
+			console.log(chalk.red(`  ✗ ${r.id} (capture failed${detail})`));
 		} else if (r.status === "changed") {
 			const detail =
 				r.reason === "pixel-diff"
