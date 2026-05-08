@@ -12,7 +12,7 @@ import { loginCommand } from "./commands/login.js";
 import { validateCommand } from "./commands/validate.js";
 
 const BANNER = `
-  ${chalk.bold("kagemusha")} ${chalk.gray("v0.1.0")}
+  ${chalk.bold("kagemusha")} ${chalk.gray("v0.2.0")}
   ${chalk.dim("The shadow warrior for your documentation.")}
 
   ${chalk.white("Auto-update help center screenshots")}
@@ -23,7 +23,7 @@ const program = new Command();
 
 program
 	.name("kagemusha")
-	.version("0.1.0")
+	.version("0.2.0")
 	.addHelpText("beforeAll", BANNER)
 	.configureHelp({
 		sortSubcommands: false,
