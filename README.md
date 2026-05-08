@@ -398,6 +398,113 @@ jobs:
           if-no-files-found: ignore
 ```
 
+## Notifications
+
+`kagemusha capture` writes a structured `reports/summary.json` after every run. CI (or any tool) reads it and decides what to notify. There's intentionally no built-in Slack/Discord adapter — `jq` + a webhook is enough, and you keep full control of the message.
+
+### Public API: `reports/summary.json`
+
+Schema versioned and **part of kagemusha's public API** — additive changes go in minor releases, removals/renames in majors.
+
+```json
+{
+  "schemaVersion": "1",
+  "timestamp": "2026-05-08T12:34:56.789Z",
+  "dryRun": false,
+  "canonical": "https://wevox-help-pages.s3.ap-northeast-1.amazonaws.com",
+  "counts": { "changed": 1, "unchanged": 5, "new": 2, "missing": 0 },
+  "results": [
+    { "id": "engagements-overview", "status": "changed", "reason": "pixel-diff", "diffPercentage": 2.34, "diffPath": "reports/diff/engagements-overview.diff.png" },
+    { "id": "admin-groups", "status": "changed", "reason": "layout-diff", "canonical": { "width": 1280, "height": 720 }, "staging": { "width": 1280, "height": 880 } },
+    { "id": "new-page", "status": "new" },
+    { "id": "dashboard", "status": "unchanged" }
+  ]
+}
+```
+
+### Example: Slack (changed/new only)
+
+In your `.github/workflows/kagemusha.yml`:
+
+```yaml
+- run: npx kagemusha capture
+
+- name: Slack notify
+  if: always()
+  run: |
+    [ -f reports/summary.json ] || exit 0
+    BODY=$(jq -r '
+      [.results[] | select(.status == "changed" or .status == "new")] as $items
+      | if ($items | length) == 0 then empty
+        else
+          "📸 *kagemusha*: \($items | length) screenshot(s)\n" +
+          ($items | map(
+            if .status == "changed" then
+              "~ \(.id) (\(.diffPercentage // .reason))"
+            else
+              "+ \(.id) (new)"
+            end
+          ) | join("\n"))
+        end
+    ' reports/summary.json)
+    [ -n "$BODY" ] || exit 0
+    curl -X POST "$SLACK_WEBHOOK_URL" \
+      -H 'Content-Type: application/json' \
+      -d "$(jq -n --arg t "$BODY" '{text: $t}')"
+  env:
+    SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+```
+
+`[ -n "$BODY" ] || exit 0` makes the step a no-op when nothing changed. The generated workflow template includes this commented out — uncomment + set the secret to enable.
+
+### Example: Discord (same payload, different key)
+
+```yaml
+- name: Discord notify
+  if: always()
+  run: |
+    [ -f reports/summary.json ] || exit 0
+    BODY=$(jq -r '...' reports/summary.json)  # same as Slack
+    [ -n "$BODY" ] || exit 0
+    curl -X POST "$DISCORD_WEBHOOK_URL" \
+      -H 'Content-Type: application/json' \
+      -d "$(jq -n --arg c "$BODY" '{content: $c}')"
+  env:
+    DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+```
+
+### Example: GitHub PR comment
+
+```yaml
+- name: PR comment
+  if: github.event_name == 'pull_request'
+  uses: actions/github-script@v7
+  with:
+    script: |
+      const fs = require('fs');
+      if (!fs.existsSync('reports/summary.json')) return;
+      const r = JSON.parse(fs.readFileSync('reports/summary.json', 'utf8'));
+      const items = r.results.filter(x => x.status === 'changed' || x.status === 'new');
+      if (items.length === 0) return;
+      const body = `## 📸 kagemusha\n\n` + items.map(x =>
+        x.status === 'changed' ? `- ~ \`${x.id}\` (${x.diffPercentage?.toFixed(2) ?? x.reason}%)` : `- + \`${x.id}\` (new)`
+      ).join('\n');
+      await github.rest.issues.createComment({
+        ...context.repo,
+        issue_number: context.issue.number,
+        body,
+      });
+```
+
+### Local debugging
+
+`reports/summary.json` is written every run, including local. Inspect with:
+
+```bash
+cat reports/summary.json | jq '.counts'
+cat reports/summary.json | jq '.results[] | select(.status == "changed")'
+```
+
 ## Positioning
 
 **kagemusha is NOT a PR-gating VRT tool.** For per-commit baselines and PR diff review with hosted HTML reports, use [reg-suit](https://github.com/reg-viz/reg-suit), [Chromatic](https://www.chromatic.com/), or [Percy](https://percy.io/).
