@@ -539,6 +539,29 @@ npx kagemusha capture --open
 - [ ] Intercom / Zendesk auto-patching
 - [ ] LLM-powered diff descriptions ("what changed in plain English")
 
+## Releasing
+
+Release-driven publish via GitHub Actions. Steps for maintainers:
+
+1. Bump `version` in `package.json` and the banner in `src/index.ts` (PR + merge to main)
+2. On GitHub: **Releases → Draft a new release**
+   - Tag: `v0.2.0` (must match `package.json` version, prefixed with `v`)
+   - Target: `main`
+   - Click **Generate release notes**, edit if needed
+   - Publish
+3. The `Release` workflow fires on `release: { types: [published] }`:
+   - Verifies the tag matches `package.json`
+   - Runs `pnpm build` + `biome check`
+   - `pnpm publish --provenance` to npm (uses `NPM_TOKEN` secret)
+
+Or via CLI:
+
+```bash
+gh release create v0.2.0 --generate-notes
+```
+
+Required secret on the repo: `NPM_TOKEN` (Automation token from npmjs.com — needs write access to the `@wasao` scope).
+
 ## License
 
 MIT

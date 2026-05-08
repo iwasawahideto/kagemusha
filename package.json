@@ -12,8 +12,13 @@
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc",
+    "build:clean": "rm -rf dist && tsc",
     "dev": "bun --watch src/index.ts",
     "typecheck": "tsc --noEmit",
     "lint": "bunx biome check .",
