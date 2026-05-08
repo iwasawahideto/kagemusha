@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
+import path from "node:path";
 import chalk from "chalk";
 import { hasAuthState, resolveLoginScriptPath } from "../lib/auth.js";
 import { handleAwsError } from "../lib/aws-error.js";
@@ -25,6 +26,32 @@ interface CaptureOptions {
 	open?: boolean;
 	threshold?: string;
 }
+
+// Schema version of `reports/summary.json`. Bump on any breaking change.
+const SUMMARY_SCHEMA_VERSION = "1";
+
+interface SummaryReport {
+	schemaVersion: string;
+	timestamp: string;
+	dryRun: boolean;
+	canonical: string;
+	counts: {
+		changed: number;
+		unchanged: number;
+		new: number;
+		missing: number;
+	};
+	results: DiffStatus[];
+}
+
+const writeSummaryReport = (
+	projectRoot: string,
+	report: SummaryReport,
+): void => {
+	const reportPath = path.join(projectRoot, "reports", "summary.json");
+	fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+	fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
+};
 
 // Open a file with the OS's default viewer (Preview on macOS, etc.).
 // `detached + unref` lets the kagemusha process exit while the viewer keeps
@@ -269,7 +296,25 @@ const runCapture = async (options: CaptureOptions): Promise<void> => {
 		);
 	}
 
-	// 5. Open changed/new results in default viewer
+	// 5. Write the structured report.
+	// `reports/summary.json` is part of kagemusha's PUBLIC API — see README
+	// "Notifications" section. Bump `schemaVersion` (or kagemusha major) on
+	// breaking changes to the shape.
+	writeSummaryReport(projectRoot, {
+		schemaVersion: SUMMARY_SCHEMA_VERSION,
+		timestamp: new Date().toISOString(),
+		dryRun,
+		canonical: remote ? remote.label() : `${outputDir} (local)`,
+		counts: {
+			changed: changed.length,
+			unchanged: unchanged.length,
+			new: newly.length,
+			missing: missing.length,
+		},
+		results,
+	});
+
+	// 6. Open changed/new results in default viewer
 	if (options.open) {
 		for (const r of [...changed, ...newly]) {
 			const p = finalPathFor.get(r.id);

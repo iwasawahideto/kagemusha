@@ -400,11 +400,38 @@ jobs:
           EMAIL: \${{ secrets.EMAIL }}
           PASSWORD: \${{ secrets.PASSWORD }}
 
-      # Keep diff visualizations as artifacts for later review
+      # Keep diff visualizations + summary.json as artifacts for later review
       - if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: kagemusha-diffs
-          path: reports/diff/
+          name: kagemusha-reports
+          path: reports/
           if-no-files-found: ignore
+
+      # Slack notification (opt-in: uncomment + add SLACK_WEBHOOK_URL secret)
+      # Notifies only when there are changed/new screenshots.
+      # - name: Slack notify
+      #   if: always()
+      #   run: |
+      #     [ -f reports/summary.json ] || exit 0
+      #     BODY=$(jq -r '
+      #       [.results[] | select(.status == "changed" or .status == "new")] as $items
+      #       | if ($items | length) == 0 then empty
+      #         else
+      #           "📸 *kagemusha*: \\($items | length) screenshot(s)\\n" +
+      #           ($items | map(
+      #             if .status == "changed" then
+      #               "~ \\(.id) (\\(.diffPercentage // .reason))"
+      #             else
+      #               "+ \\(.id) (new)"
+      #             end
+      #           ) | join("\\n"))
+      #         end
+      #     ' reports/summary.json)
+      #     [ -n "$BODY" ] || exit 0
+      #     curl -X POST "$SLACK_WEBHOOK_URL" \\
+      #       -H 'Content-Type: application/json' \\
+      #       -d "$(jq -n --arg t "$BODY" '{text: $t}')"
+      #   env:
+      #     SLACK_WEBHOOK_URL: \${{ secrets.SLACK_WEBHOOK_URL }}
 `;
