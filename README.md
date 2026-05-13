@@ -409,18 +409,36 @@ Schema versioned and **part of kagemusha's public API** — additive changes go 
 ```json
 {
   "schemaVersion": "1",
-  "timestamp": "2026-05-08T12:34:56.789Z",
+  "timestamp": "2026-05-13T12:34:56.789Z",
   "dryRun": false,
   "canonical": "https://wevox-help-pages.s3.ap-northeast-1.amazonaws.com",
   "counts": { "changed": 1, "unchanged": 5, "new": 2, "missing": 0 },
   "results": [
-    { "id": "engagements-overview", "status": "changed", "reason": "pixel-diff", "diffPercentage": 2.34, "diffPath": "reports/diff/engagements-overview.diff.png" },
-    { "id": "admin-groups", "status": "changed", "reason": "layout-diff", "canonical": { "width": 1280, "height": 720 }, "staging": { "width": 1280, "height": 880 } },
-    { "id": "new-page", "status": "new" },
+    {
+      "id": "engagements-overview",
+      "status": "changed",
+      "reason": "pixel-diff",
+      "diffPercentage": 2.34,
+      "diffPath": "reports/diff/engagements-overview.diff.png",
+      "urls": {
+        "before": "https://.../engagements-overview/previous.png",
+        "after": "https://.../engagements-overview/latest.png",
+        "diff": "https://.../engagements-overview/latest.diff.png"
+      }
+    },
+    { "id": "new-page", "status": "new", "urls": { "after": "https://.../new-page/latest.png" } },
     { "id": "dashboard", "status": "unchanged" }
   ]
 }
 ```
+
+**About `urls`** (only populated for S3 destination + actual push):
+
+- `after`: the newly uploaded `latest.png` URL — always present for `new` / `changed`
+- `before`: the prior version, copied to `previous.png` before being overwritten — undefined on the **first push for an id** (no prior version existed)
+- `diff`: pixel-diff visualization (`latest.diff.png`) — undefined for `new` (no diff base) or `layout-diff` (dimensions differ, pixelmatch can't run)
+
+Local destination or `--dry-run` leaves `urls` undefined entirely.
 
 ### Example: Slack (changed/new only)
 
@@ -430,32 +448,36 @@ In your `.github/workflows/kagemusha.yml`:
 - run: npx kagemusha capture
 
 - name: Slack notify
-  if: always()
+  env:
+    SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
   run: |
-    [ -f reports/summary.json ] || exit 0
+    [ -n "$SLACK_WEBHOOK_URL" ] || exit 0
     BODY=$(jq -r '
       [.results[] | select(.status == "changed" or .status == "new")] as $items
       | if ($items | length) == 0 then empty
-        else
-          "📸 *kagemusha*: \($items | length) screenshot(s)\n" +
-          ($items | map(
-            if .status == "changed" then
-              "~ \(.id) (\(.diffPercentage // .reason))"
-            else
-              "+ \(.id) (new)"
-            end
-          ) | join("\n"))
+        else "📸 *kagemusha*: \($items | length) screenshot(s) updated\n\n" +
+             ($items | map(
+               if .status == "changed" then
+                 "• ~ `\(.id)` (\((.diffPercentage * 100 | floor) / 100)%)\n" +
+                 (if .urls.before then "  Before: \(.urls.before)\n" else "" end) +
+                 (if .urls.after  then "  After:  \(.urls.after)\n"  else "" end) +
+                 (if .urls.diff   then "  Diff:   \(.urls.diff)"     else "" end)
+               else
+                 "• + `\(.id)` (new)" +
+                 (if .urls.after then "\n  After: \(.urls.after)" else "" end)
+               end
+             ) | join("\n\n"))
         end
     ' reports/summary.json)
-    [ -n "$BODY" ] || exit 0
-    curl -X POST "$SLACK_WEBHOOK_URL" \
+    [ -z "$BODY" ] && exit 0
+    curl -sS -X POST "$SLACK_WEBHOOK_URL" \
       -H 'Content-Type: application/json' \
-      -d "$(jq -n --arg t "$BODY" '{text: $t}')"
-  env:
-    SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      --data "$(jq -n --arg t "$BODY" '{text: $t}')"
 ```
 
-`[ -n "$BODY" ] || exit 0` makes the step a no-op when nothing changed. The generated workflow template includes this commented out — uncomment + set the secret to enable.
+Slack will auto-unfurl the URLs into image previews (assumes the bucket is public-read). If your bucket isn't public, swap to presigned URLs or notify with the run page link only.
+
+`[ -z "$BODY" ] && exit 0` makes the step a no-op when nothing changed or `SLACK_WEBHOOK_URL` is unset.
 
 ### Example: Discord (same payload, different key)
 

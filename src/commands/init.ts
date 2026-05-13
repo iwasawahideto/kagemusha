@@ -408,30 +408,34 @@ jobs:
           path: reports/
           if-no-files-found: ignore
 
-      # Slack notification (opt-in: uncomment + add SLACK_WEBHOOK_URL secret)
-      # Notifies only when there are changed/new screenshots.
-      # - name: Slack notify
-      #   if: always()
-      #   run: |
-      #     [ -f reports/summary.json ] || exit 0
-      #     BODY=$(jq -r '
-      #       [.results[] | select(.status == "changed" or .status == "new")] as $items
-      #       | if ($items | length) == 0 then empty
-      #         else
-      #           "📸 *kagemusha*: \\($items | length) screenshot(s)\\n" +
-      #           ($items | map(
-      #             if .status == "changed" then
-      #               "~ \\(.id) (\\(.diffPercentage // .reason))"
-      #             else
-      #               "+ \\(.id) (new)"
-      #             end
-      #           ) | join("\\n"))
-      #         end
-      #     ' reports/summary.json)
-      #     [ -n "$BODY" ] || exit 0
-      #     curl -X POST "$SLACK_WEBHOOK_URL" \\
-      #       -H 'Content-Type: application/json' \\
-      #       -d "$(jq -n --arg t "$BODY" '{text: $t}')"
-      #   env:
-      #     SLACK_WEBHOOK_URL: \${{ secrets.SLACK_WEBHOOK_URL }}
+      # Slack notification: only when there are changed/new screenshots.
+      # Add a SLACK_WEBHOOK_URL secret to enable (= leave unset to disable).
+      # URLs (before/after/diff) are populated for S3 destination — Slack
+      # auto-unfurls them into image previews when the bucket is public-read.
+      - name: Slack notify
+        env:
+          SLACK_WEBHOOK_URL: \${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          [ -n "$SLACK_WEBHOOK_URL" ] || exit 0
+          BODY=$(jq -r '
+            [.results[] | select(.status == "changed" or .status == "new")] as $items
+            | if ($items | length) == 0 then empty
+              else "📸 *kagemusha*: \\($items | length) screenshot(s) updated\\n\\n" +
+                   ($items | map(
+                     if .status == "changed" then
+                       "• ~ \\(.id) (\\((.diffPercentage * 100 | floor) / 100)%)" +
+                       (if .urls.before then "\\n  Before: \\(.urls.before)" else "" end) +
+                       (if .urls.after  then "\\n  After:  \\(.urls.after)"  else "" end) +
+                       (if .urls.diff   then "\\n  Diff:   \\(.urls.diff)"   else "" end)
+                     else
+                       "• + \\(.id) (new)" +
+                       (if .urls.after then "\\n  After: \\(.urls.after)" else "" end)
+                     end
+                   ) | join("\\n\\n"))
+              end
+          ' reports/summary.json)
+          [ -z "$BODY" ] && exit 0
+          curl -sS -X POST "$SLACK_WEBHOOK_URL" \\
+            -H 'Content-Type: application/json' \\
+            --data "$(jq -n --arg t "$BODY" '{text: $t}')"
 `;
