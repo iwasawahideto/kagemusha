@@ -8,6 +8,7 @@ import type {
 import { drawAnnotations } from "./annotate.js";
 import { defaultContextOptions } from "./auth.js";
 import { getOutputDir } from "./canonical.js";
+import { waitForPageReady } from "./page-ready.js";
 
 type Page = import("playwright-chromium").Page;
 type BrowserContext = import("playwright-chromium").BrowserContext;
@@ -80,18 +81,8 @@ const captureOne = async (
 	}
 
 	const url = resolveUrl(config.app.baseUrl, def.url, def.urlParams);
-	// Staged wait so SPAs render but persistent WebSocket / polling doesn't hang us:
-	// 1. `load`           = HTML + initial bundles ready
-	// 2. networkidle best-effort with 3s cap — succeeds on most pages where the
-	//    initial API fetches settle quickly; ignored on apps with permanent
-	//    socket connections (they'd never reach networkidle anyway).
-	// 3. 500ms hydration buffer for the React/Vue mount cycle.
-	// Pages that need more than 3s to render their data should add a
-	// `beforeCapture: [{action:"waitForSelector",selector:"..."}]` entry
-	// in their definition.
 	await page.goto(url, { waitUntil: "load", timeout: 60000 });
-	await page.waitForLoadState("networkidle", { timeout: 3000 }).catch(() => {});
-	await page.waitForTimeout(500);
+	await waitForPageReady(page);
 
 	if (def.hideElements?.length) {
 		await hideElements(page, def.hideElements);

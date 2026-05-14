@@ -106,7 +106,7 @@ What happens:
    - `local` mode: reads `outputDir/<id>.png` directly
 3. Diffs each staging file against canonical using [pixelmatch](https://github.com/mapbox/pixelmatch)
 4. Writes diff visualizations to `reports/diff/<id>.diff.png` for changed files
-5. **Default**: for changed/new files only, pushes staging → S3 (or copies into local `outputDir/`). Unchanged files are left alone (history snapshots `<id>/<timestamp>.png` keep prior versions for rollback)
+5. **Default**: for changed/new files only, pushes staging → S3 (or copies into local `outputDir/`). Unchanged files are left alone (history snapshots `<id>/history/<timestamp>.png` keep prior versions for rollback)
 6. **With `--dry-run`**: nothing is published — exit code 1 if any pixel-diff is over threshold (CI gate use case)
 
 Output (default — push happened):
@@ -144,7 +144,7 @@ Drop --dry-run to update canonical (https://kagemusha.example.com).
 
 - For `s3` destination: S3 IS the truth. Local `outputDir/` is just a download mirror, git-ignored
 - For `local` destination: `outputDir/` is the truth, also git-ignored — use it for local testing only
-- No `baselines/` directory; the canonical store (S3 or outputDir) IS the baseline. S3 history snapshots are kept as `<id>/<timestamp>.png` for rollback
+- No `baselines/` directory; the canonical store (S3 or outputDir) IS the baseline. S3 history snapshots are kept as `<id>/history/<timestamp>.png` for rollback
 
 ```
 <outputDir>/                 # local working mirror (git-ignored)
@@ -427,7 +427,7 @@ Schema versioned and **part of kagemusha's public API** — additive changes go 
       "urls": {
         "before": "https://.../engagements-overview/previous.png",
         "after": "https://.../engagements-overview/latest.png",
-        "diff": "https://.../engagements-overview/latest.diff.png"
+        "diff": "https://.../engagements-overview/diff.png"
       }
     },
     { "id": "new-page", "status": "new", "urls": { "after": "https://.../new-page/latest.png" } },
@@ -440,7 +440,7 @@ Schema versioned and **part of kagemusha's public API** — additive changes go 
 
 - `after`: the newly uploaded `latest.png` URL — always present for `new` / `changed`
 - `before`: the prior version, copied to `previous.png` before being overwritten — undefined on the **first push for an id** (no prior version existed)
-- `diff`: pixel-diff visualization (`latest.diff.png`) — undefined for `new` (no diff base) or `layout-diff` (dimensions differ, pixelmatch can't run)
+- `diff`: pixel-diff visualization (`diff.png`) — undefined for `new` (no diff base) or `layout-diff` (dimensions differ, pixelmatch can't run)
 
 Local destination or `--dry-run` leaves `urls` undefined entirely.
 

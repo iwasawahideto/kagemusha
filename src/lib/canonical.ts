@@ -78,7 +78,14 @@ export class S3Canonical {
 	}
 
 	private diffKey(id: string): string {
-		return `${id}/latest.diff.png`;
+		return `${id}/diff.png`;
+	}
+
+	private historyKey(id: string, timestamp: string): string {
+		// Group history snapshots under a sub-prefix so the bucket list
+		// shows `latest.png` / `previous.png` / `diff.png` cleanly without
+		// historical snapshots interleaved alphabetically.
+		return `${id}/history/${timestamp}.png`;
 	}
 
 	private urlFor(key: string): string {
@@ -109,8 +116,12 @@ export class S3Canonical {
 	 * Side effects on S3 for a single push:
 	 *   1. Copy existing latest.png → previous.png (no-op if missing)
 	 *   2. Upload localPath → latest.png
-	 *   3. Upload localPath → <timestamp>.png (history)
-	 *   4. Upload diffPath → latest.diff.png (if diffPath provided)
+	 *   3. Upload localPath → history/<timestamp>.png
+	 *   4. Upload diffPath → diff.png (if diffPath provided)
+	 *
+	 * Step 1 must complete first (otherwise the soon-to-be-overwritten latest
+	 * would be replaced before the snapshot is taken). Steps 2-4 target
+	 * different keys and run in parallel.
 	 *
 	 * Returns URLs for each side effect so callers can surface them in
 	 * `reports/summary.json` (= public API).
@@ -144,49 +155,47 @@ export class S3Canonical {
 			// first push for this id — no previous yet, leave beforeUrl undefined
 		}
 
-		// 2. Upload latest
-		await this.client.send(
-			new PutObjectCommand({
-				Bucket: this.bucket,
-				Key: this.latestKey(id),
-				Body: body,
-				ContentType: "image/png",
-				CacheControl: "no-cache",
-			}),
-		);
-
-		// 3. History snapshot for debug / rollback. Replace `:` so the key works
-		// in URLs without %3A encoding (S3 accepts it but URL-embedding breaks).
+		// 2-4. Independent uploads — run in parallel (= ~3x faster than serial).
 		const timestamp = new Date().toISOString().replaceAll(":", "-");
-		const historyKey = `${id}/${timestamp}.png`;
-		await this.client.send(
-			new PutObjectCommand({
-				Bucket: this.bucket,
-				Key: historyKey,
-				Body: body,
-				ContentType: "image/png",
-			}),
-		);
-
-		// 4. Diff visualization — only present for pixel-diff changes.
-		let diffUrl: string | undefined;
-		if (diffPath && fs.existsSync(diffPath)) {
-			await this.client.send(
+		const hasDiff = !!(diffPath && fs.existsSync(diffPath));
+		await Promise.all([
+			// 2. latest
+			this.client.send(
 				new PutObjectCommand({
 					Bucket: this.bucket,
-					Key: this.diffKey(id),
-					Body: fs.readFileSync(diffPath),
+					Key: this.latestKey(id),
+					Body: body,
 					ContentType: "image/png",
 					CacheControl: "no-cache",
 				}),
-			);
-			diffUrl = this.urlFor(this.diffKey(id));
-		}
+			),
+			// 3. history snapshot
+			this.client.send(
+				new PutObjectCommand({
+					Bucket: this.bucket,
+					Key: this.historyKey(id, timestamp),
+					Body: body,
+					ContentType: "image/png",
+				}),
+			),
+			// 4. diff visualization (= pixel-diff changes only)
+			hasDiff
+				? this.client.send(
+						new PutObjectCommand({
+							Bucket: this.bucket,
+							Key: this.diffKey(id),
+							Body: fs.readFileSync(diffPath as string),
+							ContentType: "image/png",
+							CacheControl: "no-cache",
+						}),
+					)
+				: Promise.resolve(undefined),
+		]);
 
 		return {
 			after: this.urlFor(this.latestKey(id)),
 			before: beforeUrl,
-			diff: diffUrl,
+			diff: hasDiff ? this.urlFor(this.diffKey(id)) : undefined,
 		};
 	}
 
