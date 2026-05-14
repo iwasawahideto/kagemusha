@@ -84,7 +84,12 @@ export async function editCommand(options: EditOptions): Promise<void> {
 	const fullUrl = new URL(urlPath, config.app.baseUrl).toString();
 
 	console.log(chalk.blue(`🌐 Opening ${fullUrl}...`));
-	await page.goto(fullUrl, { waitUntil: "networkidle" });
+	// No timeout in edit mode — user is interactively editing, hitting a 30s
+	// timeout mid-edit would be infuriating. Staged wait mirrors capture.ts:
+	// load -> 3s best-effort networkidle -> 500ms hydration buffer.
+	await page.goto(fullUrl, { waitUntil: "load", timeout: 0 });
+	await page.waitForLoadState("networkidle", { timeout: 3000 }).catch(() => {});
+	await page.waitForTimeout(500);
 
 	if (def.hideElements?.length) {
 		for (const selector of def.hideElements) {

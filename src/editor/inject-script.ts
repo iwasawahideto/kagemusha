@@ -94,7 +94,7 @@ toolbar.id = "kagemusha-toolbar";
 toolbar.innerHTML = `
   <style>
     #kagemusha-toolbar {
-      position: fixed; top: 0; left: 0; right: 0; z-index: 999999;
+      position: fixed; top: 0; left: 0; right: 0; z-index: 2147483647;
       background: #16213e; padding: 8px 16px; display: flex; align-items: center; gap: 10px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.3); font-family: -apple-system, sans-serif;
       flex-wrap: nowrap; overflow-x: auto;
@@ -113,7 +113,7 @@ toolbar.innerHTML = `
     #kagemusha-toolbar .save-btn:hover { background: #16a34a; }
     #kagemusha-svg-layer {
       position: absolute; top: 0; left: 0; width: 100%;
-      z-index: 999998; pointer-events: none;
+      z-index: 2147483646; pointer-events: none;
     }
     #kagemusha-svg-layer.drawing { pointer-events: auto; cursor: crosshair; }
     #kagemusha-svg-layer.cropping { pointer-events: auto; cursor: crosshair; }
@@ -131,7 +131,7 @@ toolbar.innerHTML = `
     .kagemusha-hint {
       position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
       color: #fff; background: rgba(0,0,0,0.7); padding: 6px 16px; border-radius: 8px;
-      font-size: 12px; z-index: 999999; font-family: -apple-system, sans-serif;
+      font-size: 12px; z-index: 2147483647; font-family: -apple-system, sans-serif;
     }
   </style>
   <span class="title">🥷</span>
@@ -147,7 +147,9 @@ toolbar.innerHTML = `
   <button id="kg-delete">🗑 Delete</button>
   <button class="save-btn" id="kg-save">💾 Save</button>
 `;
-document.body.appendChild(toolbar);
+// Append to <html> (not <body>) so SPA modals that mark <body>'s children
+// as `inert` / `aria-hidden="true"` don't disable our toolbar interactions.
+document.documentElement.appendChild(toolbar);
 toolbarHeight =
 	Math.ceil(toolbar.getBoundingClientRect().height) || TOOLBAR_HEIGHT_FALLBACK;
 document.body.style.paddingTop = `${toolbarHeight}px`;
@@ -156,13 +158,13 @@ const hint = document.createElement("div");
 hint.className = "kagemusha-hint";
 hint.textContent =
 	"Click and drag to add annotations. Click to select. Press Delete to remove.";
-document.body.appendChild(hint);
+document.documentElement.appendChild(hint);
 
 // --- SVG LAYER ---
 const svg = document.createElementNS(svgNS, "svg");
 svg.id = "kagemusha-svg-layer";
 svg.classList.add("drawing");
-document.body.appendChild(svg);
+document.documentElement.appendChild(svg);
 
 const updateSvgSize = () => {
 	svg.setAttribute("width", String(window.innerWidth));
@@ -817,10 +819,29 @@ _win.__kagemusha_loadCapture = (capture: CaptureSpec) => {
 	}
 };
 
+// In-page toast — `window.alert()` would be auto-dismissed by Playwright's
+// default dialog handler (= the user sees a flash they can't read). We
+// render our own non-blocking toast under <html> so it can't be inert'd by
+// host SPAs (same reason as the toolbar).
+const showToast = (message: string, ms = 5000): void => {
+	const toast = document.createElement("div");
+	toast.setAttribute(
+		"style",
+		"position:fixed;top:72px;left:50%;transform:translateX(-50%);" +
+			"background:#dc2626;color:#fff;padding:12px 20px;border-radius:8px;" +
+			"font-family:-apple-system,sans-serif;font-size:14px;line-height:1.4;" +
+			"z-index:2147483647;box-shadow:0 4px 12px rgba(0,0,0,0.3);" +
+			"max-width:480px;white-space:pre-wrap;text-align:center;",
+	);
+	toast.textContent = message;
+	document.documentElement.appendChild(toast);
+	setTimeout(() => toast.remove(), ms);
+};
+
 // --- SAVE ---
 const save = () => {
 	if (captureMode === "crop" && !captureCrop) {
-		alert(
+		showToast(
 			"Crop mode is active but no area is drawn.\nDrag to define an area, or switch to Full Page.",
 		);
 		return;
