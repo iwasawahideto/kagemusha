@@ -158,16 +158,24 @@ const runCapture = async (options: CaptureOptions): Promise<void> => {
 	const results: DiffStatus[] = [];
 	// Track final paths (where the user can find each capture after the run)
 	const finalPathFor = new Map<string, string>();
+	// Track remote URLs returned by `remote.push()` so we can attach them to
+	// summary.json results (for notify consumers).
+	const remoteUrlsFor = new Map<
+		string,
+		Awaited<ReturnType<NonNullable<typeof remote>["push"]>>
+	>();
 
 	const promote = async (
 		id: string,
 		stagingPath: string,
 		canonicalPath: string,
+		diffPath?: string,
 	): Promise<void> => {
 		fs.mkdirSync(outputDir, { recursive: true });
 		// Push to remote first so a failure doesn't leave local ahead of S3
 		if (remote) {
-			await remote.push(id, stagingPath);
+			const urls = await remote.push(id, stagingPath, diffPath);
+			remoteUrlsFor.set(id, urls);
 		}
 		fs.copyFileSync(stagingPath, canonicalPath);
 		fs.rmSync(stagingPath, { force: true });
@@ -180,11 +188,12 @@ const runCapture = async (options: CaptureOptions): Promise<void> => {
 		id: string,
 		stagingPath: string,
 		canonicalPath: string,
+		diffPath?: string,
 	): Promise<void> => {
 		if (dryRun) {
 			finalPathFor.set(id, stagingPath);
 		} else {
-			await promote(id, stagingPath, canonicalPath);
+			await promote(id, stagingPath, canonicalPath, diffPath);
 		}
 	};
 
@@ -212,7 +221,11 @@ const runCapture = async (options: CaptureOptions): Promise<void> => {
 		// New: no canonical yet — adopt staging as canonical (unless dry-run)
 		if (fetchResult === "not-found") {
 			await applyOrStage(def.id, stagingPath, canonicalPath);
-			results.push({ id: def.id, status: "new" });
+			results.push({
+				id: def.id,
+				status: "new",
+				urls: remoteUrlsFor.get(def.id),
+			});
 			continue;
 		}
 
@@ -224,6 +237,7 @@ const runCapture = async (options: CaptureOptions): Promise<void> => {
 			fs.rmSync(stagingPath, { force: true });
 			finalPathFor.set(def.id, canonicalPath);
 		} else if (result.reason === "layout-diff") {
+			// layout-diff has no pixelmatch diff PNG to upload (= dimensions differ)
 			await applyOrStage(def.id, stagingPath, canonicalPath);
 			results.push({
 				id: def.id,
@@ -231,15 +245,17 @@ const runCapture = async (options: CaptureOptions): Promise<void> => {
 				reason: "layout-diff",
 				canonical: result.canonical,
 				staging: result.staging,
+				urls: remoteUrlsFor.get(def.id),
 			});
 		} else {
-			await applyOrStage(def.id, stagingPath, canonicalPath);
+			await applyOrStage(def.id, stagingPath, canonicalPath, diffPath);
 			results.push({
 				id: def.id,
 				status: "changed",
 				reason: "pixel-diff",
 				diffPercentage: result.diffPercentage,
 				diffPath,
+				urls: remoteUrlsFor.get(def.id),
 			});
 		}
 	}

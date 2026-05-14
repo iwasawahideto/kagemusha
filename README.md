@@ -241,20 +241,24 @@ No keys in secrets.
 
 ### 3. Login credentials (if your app needs auth)
 
-If you wrote a `.kagemusha/login.mjs` that reads `process.env.EMAIL` / `PASSWORD`:
+**Choose env var names that fit your project.** The skeleton uses `MY_APP_EMAIL` / `MY_APP_PASSWORD` as placeholders — rename them in `.kagemusha/login.mjs` and the workflow.
+
+- ❌ Avoid generic names like `EMAIL` / `PASSWORD` (collide with shell rc / other tools)
+- ❌ Avoid `KAGEMUSHA_*` prefix (reserved for kagemusha's own future config / GUI auth)
+- ✅ Good: `STAGING_EMAIL`, `WEVOX_TEST_EMAIL`, `MYAPP_CI_USER`
 
 \`\`\`bash
-gh secret set EMAIL --body "ci-bot@example.com"
-gh secret set PASSWORD --body "..."
+gh secret set STAGING_EMAIL --body "ci-bot@example.com"
+gh secret set STAGING_PASSWORD --body "..."
 \`\`\`
 
-Pass them to the workflow step (already templated in `kagemusha init`):
+Pass them to the workflow step (match the names your `login.mjs` reads):
 
 \`\`\`yaml
 - run: npx kagemusha capture
   env:
-    EMAIL: \${{ secrets.EMAIL }}
-    PASSWORD: \${{ secrets.PASSWORD }}
+    STAGING_EMAIL: \${{ secrets.STAGING_EMAIL }}
+    STAGING_PASSWORD: \${{ secrets.STAGING_PASSWORD }}
 \`\`\`
 
 For SSO / MFA cases where login can't be scripted, fall back to `KAGEMUSHA_STORAGE_STATE` (see Authentication section below).
@@ -284,12 +288,12 @@ There are two ways to handle login:
 
 ### Local dev: passing env vars
 
-kagemusha doesn't auto-load `.env`. Pick whichever fits your project:
+kagemusha doesn't auto-load `.env`. Pick whichever fits your project (substitute the env names you chose):
 
 ```bash
 # Direct shell export
-export EMAIL=demo@example.com
-export PASSWORD=local-dev-password
+export STAGING_EMAIL=demo@example.com
+export STAGING_PASSWORD=local-dev-password
 npx kagemusha capture
 
 # Or wrap with dotenv-cli (works with your existing .env)
@@ -309,14 +313,15 @@ Best for **CI** and apps with simple form-based login. `kagemusha init` offers t
 /** @param {import('playwright-chromium').Page} page */
 export const login = async (page) => {
   await page.goto("/login");
-  await page.fill('input[name="email"]', process.env.EMAIL ?? "");
-  await page.fill('input[name="password"]', process.env.PASSWORD ?? "");
+  // Pick env names that fit your project (NOT EMAIL/PASSWORD, NOT KAGEMUSHA_*).
+  await page.fill('input[name="email"]', process.env.MY_APP_EMAIL ?? "");
+  await page.fill('input[name="password"]', process.env.MY_APP_PASSWORD ?? "");
   await page.click('button[type="submit"]');
   await page.waitForURL((url) => !url.pathname.startsWith("/login"));
 };
 ```
 
-Edit the selectors / wait condition for your app. `kagemusha capture` auto-runs this on first invocation when no saved session exists, so CI just needs `kagemusha capture` (no separate login step). `baseURL` is set from `kagemusha.config.yaml`, so relative paths work.
+Edit the selectors / wait condition / env names for your app. `kagemusha capture` auto-runs this on first invocation when no saved session exists, so CI just needs `kagemusha capture` (no separate login step). `baseURL` is set from `kagemusha.config.yaml`, so relative paths work.
 
 More variations:
 
@@ -329,14 +334,14 @@ More variations:
 // Token-based:
 export const login = async (page) => {
   await page.context().setExtraHTTPHeaders({
-    Authorization: \`Bearer \${process.env.TOKEN}\`,
+    Authorization: \`Bearer \${process.env.MY_APP_TOKEN}\`,
   });
 };
 
 // Multi-step (e.g. email → check inbox → magic link):
 export const login = async (page) => {
   await page.goto("/login");
-  await page.fill('input[name="email"]', process.env.EMAIL);
+  await page.fill('input[name="email"]', process.env.MY_APP_EMAIL);
   await page.click('button[type="submit"]');
   // ...fetch the link from a test mailbox API, then navigate to it...
 };
@@ -358,19 +363,18 @@ A typical CI flow (uses scripted login from Option 1):
 ```yaml
 name: Kagemusha
 on:
-  pull_request:
-    types: [closed]
+  push:
     branches: [main]
   workflow_dispatch:
 
-# Serialize runs so two merges can't race the S3 canonical
+# Cancel in-progress runs when a newer push arrives — kagemusha captures the
+# full set each time, so the latest run subsumes any earlier one.
 concurrency:
   group: kagemusha
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   update-screenshots:
-    if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -386,15 +390,15 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          EMAIL: ${{ secrets.EMAIL }}
-          PASSWORD: ${{ secrets.PASSWORD }}
+          # Rename to match what your .kagemusha/login.mjs reads
+          MY_APP_EMAIL: ${{ secrets.MY_APP_EMAIL }}
+          MY_APP_PASSWORD: ${{ secrets.MY_APP_PASSWORD }}
 
-      # Optional: keep diff visualizations as artifacts for later review
-      - if: always()
-        uses: actions/upload-artifact@v4
+      # Keep reports/ (diff PNGs + summary.json) for later review
+      - uses: actions/upload-artifact@v4
         with:
-          name: kagemusha-diffs
-          path: reports/diff/
+          name: kagemusha-reports
+          path: reports/
           if-no-files-found: ignore
 ```
 
@@ -409,18 +413,36 @@ Schema versioned and **part of kagemusha's public API** — additive changes go 
 ```json
 {
   "schemaVersion": "1",
-  "timestamp": "2026-05-08T12:34:56.789Z",
+  "timestamp": "2026-05-13T12:34:56.789Z",
   "dryRun": false,
   "canonical": "https://wevox-help-pages.s3.ap-northeast-1.amazonaws.com",
   "counts": { "changed": 1, "unchanged": 5, "new": 2, "missing": 0 },
   "results": [
-    { "id": "engagements-overview", "status": "changed", "reason": "pixel-diff", "diffPercentage": 2.34, "diffPath": "reports/diff/engagements-overview.diff.png" },
-    { "id": "admin-groups", "status": "changed", "reason": "layout-diff", "canonical": { "width": 1280, "height": 720 }, "staging": { "width": 1280, "height": 880 } },
-    { "id": "new-page", "status": "new" },
+    {
+      "id": "engagements-overview",
+      "status": "changed",
+      "reason": "pixel-diff",
+      "diffPercentage": 2.34,
+      "diffPath": "reports/diff/engagements-overview.diff.png",
+      "urls": {
+        "before": "https://.../engagements-overview/previous.png",
+        "after": "https://.../engagements-overview/latest.png",
+        "diff": "https://.../engagements-overview/latest.diff.png"
+      }
+    },
+    { "id": "new-page", "status": "new", "urls": { "after": "https://.../new-page/latest.png" } },
     { "id": "dashboard", "status": "unchanged" }
   ]
 }
 ```
+
+**About `urls`** (only populated for S3 destination + actual push):
+
+- `after`: the newly uploaded `latest.png` URL — always present for `new` / `changed`
+- `before`: the prior version, copied to `previous.png` before being overwritten — undefined on the **first push for an id** (no prior version existed)
+- `diff`: pixel-diff visualization (`latest.diff.png`) — undefined for `new` (no diff base) or `layout-diff` (dimensions differ, pixelmatch can't run)
+
+Local destination or `--dry-run` leaves `urls` undefined entirely.
 
 ### Example: Slack (changed/new only)
 
@@ -430,32 +452,36 @@ In your `.github/workflows/kagemusha.yml`:
 - run: npx kagemusha capture
 
 - name: Slack notify
-  if: always()
+  env:
+    SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
   run: |
-    [ -f reports/summary.json ] || exit 0
+    [ -n "$SLACK_WEBHOOK_URL" ] || exit 0
     BODY=$(jq -r '
       [.results[] | select(.status == "changed" or .status == "new")] as $items
       | if ($items | length) == 0 then empty
-        else
-          "📸 *kagemusha*: \($items | length) screenshot(s)\n" +
-          ($items | map(
-            if .status == "changed" then
-              "~ \(.id) (\(.diffPercentage // .reason))"
-            else
-              "+ \(.id) (new)"
-            end
-          ) | join("\n"))
+        else "📸 *kagemusha*: \($items | length) screenshot(s) updated\n\n" +
+             ($items | map(
+               if .status == "changed" then
+                 "• ~ `\(.id)` (\((.diffPercentage * 100 | floor) / 100)%)\n" +
+                 (if .urls.before then "  Before: \(.urls.before)\n" else "" end) +
+                 (if .urls.after  then "  After:  \(.urls.after)\n"  else "" end) +
+                 (if .urls.diff   then "  Diff:   \(.urls.diff)"     else "" end)
+               else
+                 "• + `\(.id)` (new)" +
+                 (if .urls.after then "\n  After: \(.urls.after)" else "" end)
+               end
+             ) | join("\n\n"))
         end
     ' reports/summary.json)
-    [ -n "$BODY" ] || exit 0
-    curl -X POST "$SLACK_WEBHOOK_URL" \
+    [ -z "$BODY" ] && exit 0
+    curl -sS -X POST "$SLACK_WEBHOOK_URL" \
       -H 'Content-Type: application/json' \
-      -d "$(jq -n --arg t "$BODY" '{text: $t}')"
-  env:
-    SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      --data "$(jq -n --arg t "$BODY" '{text: $t}')"
 ```
 
-`[ -n "$BODY" ] || exit 0` makes the step a no-op when nothing changed. The generated workflow template includes this commented out — uncomment + set the secret to enable.
+Slack will auto-unfurl the URLs into image previews (assumes the bucket is public-read). If your bucket isn't public, swap to presigned URLs or notify with the run page link only.
+
+`[ -z "$BODY" ] && exit 0` makes the step a no-op when nothing changed or `SLACK_WEBHOOK_URL` is unset.
 
 ### Example: Discord (same payload, different key)
 

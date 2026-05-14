@@ -24,6 +24,12 @@ CI の jq クエリ等で parse される。
   - **field 削除 / rename / 型変更**: `"1"` → `"2"` に bump (= breaking)
 - README「Notifications > Public API: `reports/summary.json`」セクションも同期更新
 
+現行 fields (= schemaVersion 1):
+- top level: `schemaVersion`, `timestamp`, `dryRun`, `canonical`, `counts`, `results`
+- `results[]`: `id`, `status` ("unchanged" | "new" | "missing" | "changed")
+- `results[].status === "changed"`: `reason` ("pixel-diff" | "layout-diff"), 各 reason 固有 fields
+- `results[].urls?`: `{ after, before?, diff? }` — S3 destination + 実 push 時のみ存在
+
 ### 2. `.kagemusha/login.mjs` の引数 shape
 
 ユーザーが書く login script は `(page: Page) => Promise<void>` を export する契約。

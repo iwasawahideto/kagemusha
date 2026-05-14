@@ -8,9 +8,25 @@ export interface Dimensions {
 	height: number;
 }
 
+/**
+ * URLs of the canonical artifacts on the remote (= S3). Only populated when
+ * `capture` actually pushed (= default mode, S3 destination). `--dry-run` and
+ * `local` destination leave this undefined.
+ *
+ * - `after`: the new `latest.png` URL
+ * - `before`: the previous `latest.png` URL (= `previous.png`). Undefined on
+ *   the first push for this id (no prior version existed).
+ * - `diff`: pixel-diff visualization URL. Undefined for `new` or `layout-diff`.
+ */
+export interface ResultUrls {
+	after: string;
+	before?: string;
+	diff?: string;
+}
+
 export type DiffStatus =
 	| { id: string; status: "unchanged" }
-	| { id: string; status: "new" }
+	| { id: string; status: "new"; urls?: ResultUrls }
 	| { id: string; status: "missing"; reason?: string }
 	| {
 			id: string;
@@ -18,6 +34,7 @@ export type DiffStatus =
 			reason: "pixel-diff";
 			diffPercentage: number;
 			diffPath: string;
+			urls?: ResultUrls;
 	  }
 	| {
 			id: string;
@@ -25,6 +42,7 @@ export type DiffStatus =
 			reason: "layout-diff";
 			canonical: Dimensions;
 			staging: Dimensions;
+			urls?: ResultUrls;
 	  };
 
 export interface DiffOptions {
