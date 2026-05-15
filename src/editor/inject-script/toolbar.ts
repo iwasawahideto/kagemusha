@@ -19,6 +19,16 @@ const TOOLBAR_HTML = `
       box-shadow: 0 2px 8px rgba(0,0,0,0.3); font-family: -apple-system, sans-serif;
       flex-wrap: nowrap; overflow-x: auto;
     }
+    #kagemusha-toolbar.detached {
+      top: auto; left: auto; right: auto;
+      width: max-content; max-width: calc(100vw - 32px);
+      border-radius: 8px; overflow: hidden;
+    }
+    #kagemusha-toolbar .kg-drag-handle {
+      cursor: move; padding: 4px 6px; margin-right: -2px;
+      color: #888; font-size: 14px; user-select: none;
+    }
+    #kagemusha-toolbar .kg-drag-handle:hover { color: #fff; }
     #kagemusha-toolbar button {
       padding: 6px 12px; border: 1px solid #444; border-radius: 6px;
       background: #1a1a2e; color: #fff; font-size: 13px; cursor: pointer;
@@ -75,6 +85,7 @@ const TOOLBAR_HTML = `
       font-size: 12px; z-index: var(--kg-z-top); font-family: -apple-system, sans-serif;
     }
   </style>
+  <span class="kg-drag-handle" title="Drag to move toolbar / double-click to dock">⋮⋮</span>
   <span class="title">🥷</span>
   <span class="group-label">Capture</span>
   <button id="kg-cap-full" class="cap-btn active">📷 Full</button>
@@ -124,10 +135,30 @@ export const initToolbar = (cb: ToolbarCallbacks, svg: SVGElement): void => {
 	// as `inert` / `aria-hidden="true"` don't disable our toolbar interactions.
 	document.documentElement.appendChild(toolbar);
 
-	state.toolbarHeight =
+	const measuredHeight =
 		Math.ceil(toolbar.getBoundingClientRect().height) ||
 		TOOLBAR_HEIGHT_FALLBACK;
-	document.body.style.paddingTop = `${state.toolbarHeight}px`;
+
+	// We push host page content down by `padding-top` on <body> so the toolbar
+	// doesn't cover the page header. But SPAs whose root takes 100% of the
+	// body height (e.g. wevox.io) ignore that padding — the host content
+	// stays at y=0. If we still applied the offset in serialize, every
+	// recorded rect would land toolbarHeight pixels lower than intended at
+	// capture time. Detect by measuring whether the first body child actually
+	// moved, and fall back to no offset when it didn't.
+	const anchor = document.body.firstElementChild ?? document.body;
+	const beforeTop = anchor.getBoundingClientRect().top;
+	document.body.style.paddingTop = `${measuredHeight}px`;
+	const afterTop = anchor.getBoundingClientRect().top;
+	const padShifted = afterTop - beforeTop >= measuredHeight - 5;
+	if (padShifted) {
+		state.toolbarHeight = measuredHeight;
+	} else {
+		// padding didn't move content — revert it (no point keeping a CSS
+		// rule that does nothing) and disable coordinate offset.
+		document.body.style.paddingTop = "";
+		state.toolbarHeight = 0;
+	}
 
 	const hint = document.createElement("div");
 	hint.className = "kagemusha-hint";
@@ -158,6 +189,73 @@ export const initToolbar = (cb: ToolbarCallbacks, svg: SVGElement): void => {
 	document
 		.getElementById("kg-save")
 		?.addEventListener("click", () => cb.onSave());
+
+	wireDragHandle(toolbar);
+};
+
+// Make the toolbar draggable by its handle. Dragging breaks the toolbar out
+// of its top-edge dock (= width: 100%) into a free-floating bar — useful
+// when the toolbar covers content the user wants to annotate. Double-click
+// the handle to re-dock.
+const wireDragHandle = (toolbar: HTMLElement): void => {
+	const handle = toolbar.querySelector(".kg-drag-handle");
+	if (!handle) return;
+
+	let dragging = false;
+	let offsetX = 0;
+	let offsetY = 0;
+
+	const onMouseDown = (e: Event): void => {
+		const m = e as MouseEvent;
+		m.preventDefault();
+		const rect = toolbar.getBoundingClientRect();
+		offsetX = m.clientX - rect.left;
+		offsetY = m.clientY - rect.top;
+		// Switch to detached mode on first drag so the toolbar shrinks to
+		// content width and we can position it freely.
+		if (!toolbar.classList.contains("detached")) {
+			toolbar.classList.add("detached");
+			toolbar.style.top = `${rect.top}px`;
+			toolbar.style.left = `${rect.left}px`;
+			// Released padding-top so docked-mode push doesn't linger.
+			document.body.style.paddingTop = "";
+		}
+		dragging = true;
+		document.body.style.userSelect = "none";
+	};
+
+	const onMouseMove = (e: MouseEvent): void => {
+		if (!dragging) return;
+		const x = Math.max(
+			0,
+			Math.min(window.innerWidth - toolbar.offsetWidth, e.clientX - offsetX),
+		);
+		const y = Math.max(
+			0,
+			Math.min(window.innerHeight - toolbar.offsetHeight, e.clientY - offsetY),
+		);
+		toolbar.style.left = `${x}px`;
+		toolbar.style.top = `${y}px`;
+	};
+
+	const onMouseUp = (): void => {
+		if (!dragging) return;
+		dragging = false;
+		document.body.style.userSelect = "";
+	};
+
+	const onDoubleClick = (): void => {
+		// Re-dock to top edge.
+		toolbar.classList.remove("detached");
+		toolbar.style.top = "";
+		toolbar.style.left = "";
+		toolbar.style.right = "";
+	};
+
+	handle.addEventListener("mousedown", onMouseDown);
+	document.addEventListener("mousemove", onMouseMove);
+	document.addEventListener("mouseup", onMouseUp);
+	handle.addEventListener("dblclick", onDoubleClick);
 };
 
 const updateCaptureUi = (): void => {
