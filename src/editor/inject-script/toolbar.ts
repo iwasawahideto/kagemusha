@@ -39,6 +39,8 @@ const TOOLBAR_HTML = `
     #kagemusha-toolbar button:disabled { opacity: 0.4; cursor: not-allowed; }
     #kagemusha-toolbar #kg-rec-group { display: none; align-items: center; gap: 10px; }
     #kagemusha-toolbar #kg-rec-group.visible { display: flex; }
+    #kagemusha-toolbar #kg-steps-toggle.has-steps { background: #6366f1; border-color: #6366f1; }
+    #kagemusha-toolbar #kg-steps-toggle.open { background: #6366f1; border-color: #6366f1; }
     .kagemusha-picker-outline {
       position: fixed; border: 2px solid #0ea5e9;
       background: rgba(14,165,233,0.08); pointer-events: none;
@@ -90,6 +92,7 @@ const TOOLBAR_HTML = `
     <button id="kg-rec-wfs">+ WaitForSelector</button>
     <button id="kg-rec-hover">+ Hover</button>
   </div>
+  <button id="kg-steps-toggle">📋 Steps (0)</button>
   <div class="sep"></div>
   <button id="kg-delete">🗑 Delete</button>
   <button class="save-btn" id="kg-save">💾 Save</button>

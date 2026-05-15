@@ -34,6 +34,7 @@ const isOwnUi = (el: EventTarget | null): boolean => {
 let svgRef: SVGElement | null = null;
 let panelEl: HTMLDivElement | null = null;
 let pickerOutlineEl: HTMLDivElement | null = null;
+let panelOpen = false;
 
 // --- Steps panel (read-only list) ---
 
@@ -58,7 +59,8 @@ const ensurePanel = (): HTMLDivElement => {
 
 const renderPanel = (): void => {
 	const panel = ensurePanel();
-	if (state.recordedSteps.length === 0 && !state.recording) {
+	updateToggleButton();
+	if (!panelOpen) {
 		panel.style.display = "none";
 		return;
 	}
@@ -75,23 +77,57 @@ const renderPanel = (): void => {
 	panel.innerHTML = `${header}${rows || '<div style="color:#888;">(no steps)</div>'}`;
 };
 
+const updateToggleButton = (): void => {
+	const btn = document.getElementById("kg-steps-toggle");
+	if (!btn) return;
+	const n = state.recordedSteps.length;
+	const recording = state.recording;
+	btn.textContent = recording
+		? `📹 Steps (${n})`
+		: n > 0
+			? `📋 Steps (${n})`
+			: "📋 Steps (0)";
+	btn.classList.toggle("has-steps", n > 0 && !panelOpen);
+	btn.classList.toggle("open", panelOpen);
+};
+
+const openPanel = (): void => {
+	panelOpen = true;
+	renderPanel();
+};
+
+const closePanel = (): void => {
+	panelOpen = false;
+	renderPanel();
+};
+
+const togglePanel = (): void => {
+	if (panelOpen) closePanel();
+	else openPanel();
+};
+
 const escapeHtml = (v: string): string =>
 	v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+const optBadge = (s: CaptureAction & { optional?: boolean }): string =>
+	s.optional
+		? ' <span style="color:#7a89b0;font-size:10px;background:#2a2a4e;padding:1px 5px;border-radius:3px;margin-left:4px;">optional</span>'
+		: "";
 
 const renderStepLine = (s: CaptureAction): string => {
 	switch (s.action) {
 		case "click":
-			return `<b>click</b> ${escapeHtml(s.selector)}`;
+			return `<b>click</b> ${escapeHtml(s.selector)}${optBadge(s)}`;
 		case "type":
-			return `<b>type</b> ${escapeHtml(s.selector)} → "${escapeHtml(s.text)}"`;
+			return `<b>type</b> ${escapeHtml(s.selector)} → "${escapeHtml(s.text)}"${optBadge(s)}`;
 		case "select":
-			return `<b>select</b> ${escapeHtml(s.selector)} → "${escapeHtml(s.value)}"`;
+			return `<b>select</b> ${escapeHtml(s.selector)} → "${escapeHtml(s.value)}"${optBadge(s)}`;
 		case "hover":
-			return `<b>hover</b> ${escapeHtml(s.selector)}`;
+			return `<b>hover</b> ${escapeHtml(s.selector)}${optBadge(s)}`;
 		case "wait":
 			return `<b>wait</b> ${s.ms}ms`;
 		case "waitForSelector":
-			return `<b>waitForSelector</b> ${escapeHtml(s.selector)}${s.timeout ? ` (${s.timeout}ms)` : ""}`;
+			return `<b>waitForSelector</b> ${escapeHtml(s.selector)}${s.timeout ? ` (${s.timeout}ms)` : ""}${optBadge(s)}`;
 		default:
 			return `<b>${(s as { action: string }).action}</b>`;
 	}
@@ -253,8 +289,16 @@ const onClickCapture = (e: MouseEvent): void => {
 
 	// Normal record: append a click step. The page still receives the click
 	// because we don't preventDefault — we only observe.
+	//
+	// `optional: true` so capture doesn't fail when the recorded element is
+	// absent on a re-run (= session-dependent modals, AB-test variants, etc).
+	// User can flip to false in definitions.json if the step must succeed.
 	const sel = computeSelector(el);
-	state.recordedSteps.push({ action: "click", selector: sel.selector });
+	state.recordedSteps.push({
+		action: "click",
+		selector: sel.selector,
+		optional: true,
+	});
 	renderPanel();
 };
 
@@ -270,10 +314,12 @@ const onChangeCapture = (e: Event): void => {
 		const type = (input as HTMLInputElement).type;
 		if (type === "checkbox" || type === "radio") return;
 		const sel = computeSelector(input);
+		// optional:true — same reasoning as click. See onClickCapture.
 		state.recordedSteps.push({
 			action: "type",
 			selector: sel.selector,
 			text: input.value,
+			optional: true,
 		});
 		renderPanel();
 		return;
@@ -285,6 +331,7 @@ const onChangeCapture = (e: Event): void => {
 			action: "select",
 			selector: sel.selector,
 			value: select.value,
+			optional: true,
 		});
 		renderPanel();
 	}
@@ -305,6 +352,18 @@ const onMouseMoveCapture = (e: MouseEvent): void => {
 	const el = e.target as Element | null;
 	if (!el) return;
 	showPickerOutline(el.getBoundingClientRect());
+};
+
+// Close the steps popover when clicking outside it (or the toggle button).
+// We listen in the bubble phase so the toggle's own stopPropagation can
+// preempt this, and we bail if the click landed inside the panel.
+const onOutsideClick = (e: MouseEvent): void => {
+	if (!panelOpen) return;
+	const target = e.target as Element | null;
+	if (!target) return;
+	if (target.closest(".kagemusha-steps-panel")) return;
+	if (target.closest("#kg-steps-toggle")) return;
+	closePanel();
 };
 
 // --- Step builder buttons ---
@@ -336,6 +395,10 @@ export const initRecord = (svg: SVGElement): void => {
 	document
 		.getElementById("kg-rec-hover")
 		?.addEventListener("click", () => startPicker("hover"));
+	document.getElementById("kg-steps-toggle")?.addEventListener("click", (e) => {
+		e.stopPropagation();
+		togglePanel();
+	});
 
 	// Capture-phase listeners on document — we want first dibs so we can
 	// observe events on elements that stopPropagation later.
@@ -343,6 +406,11 @@ export const initRecord = (svg: SVGElement): void => {
 	document.addEventListener("change", onChangeCapture, true);
 	document.addEventListener("keydown", onKeyDownCapture, true);
 	document.addEventListener("mousemove", onMouseMoveCapture, true);
+
+	// Outside click closes the panel. Use bubble phase so that clicks on the
+	// toggle / inside the panel can suppress this via stopPropagation /
+	// closest checks before it reaches here.
+	document.addEventListener("click", onOutsideClick);
 
 	updateToolbarLockState();
 	renderPanel();
