@@ -5,380 +5,106 @@ The shadow warrior for your documentation.
 
 ## What it does
 
-When you push code, Kagemusha automatically captures screenshots of your app, detects which screenshots changed visually, and uploads the fresh ones to S3 with stable URLs. No more "is this help article screenshot still up-to-date?".
+`kagemusha capture` walks your app with Playwright, diffs each screenshot against the canonical version on S3, and pushes only what changed. Your help articles embed a stable URL once and the image refreshes itself on every merge to main.
 
-- **Auto-discover pages** — Crawls your app (SPA routes included) and lets you pick which ones to capture
-- **Login once** — Logs in via browser and reuses the session (`storageState`) for all captures
-- **Playwright-powered** — Full-page / crop capture, pre-capture actions, element hiding
-- **Visual regression** — One command captures, diffs against canonical (S3 or local), and publishes only what changed via [pixelmatch](https://github.com/mapbox/pixelmatch)
-- **Visual editor** — Draw rectangles, arrows, and labels; pick crop range by drag
-- **S3-first** — Stable URLs you can embed in help articles once and never touch again. S3 IS the canonical truth — git stays clean
-- **Local mode** — Optional output dir for testing; never committed to git
-- **GitHub Actions ready** — Runs on every merge to main
+- **One verb (`capture`)** — capture → diff → push, all in one command
+- **S3-first** — `<id>/latest.png` is the canonical, embedded directly into help articles
+- **Component-level capture** — Playwright-powered, full-page / crop, pre-capture actions, element hiding
+- **Visual editor** — draw rectangles, arrows, labels; pick crop range by drag (`kagemusha edit`)
+- **Login once** — store `storageState` locally, or run a scripted login on every CI run
+- **Slack-ready** — `reports/summary.json` ships before/after URLs so notifications include image previews
 
 ## Quick Start
 
 ```bash
-# Install
 npm install -D @wasao/kagemusha
 
 # Interactive setup: config → login → discover pages → workflow
 npx kagemusha init
 
-# Capture, diff vs canonical, publish what changed (the everyday command)
+# Capture, diff vs canonical, publish what changed
 npx kagemusha capture
 
-# Preview only — no canonical update, no S3 push
+# Preview only — no canonical update
 npx kagemusha capture --dry-run
 ```
-
-That's it. **One verb does everything**: capture → diff → publish (skip with `--dry-run`).
-
-## Workflow
-
-### 1. First-time setup — `init`
-
-```bash
-npx kagemusha init
-```
-
-Walks you through:
-
-1. **Config** — target base URL and save destination (local / S3)
-2. **Login** — if the app requires auth, opens a browser so you can sign in manually. The session is saved to `.kagemusha/auth-state.json` and reused afterwards.
-3. **Discover** — crawls the app (clicks nav links + BFS on `<a>`) and shows a checklist of found pages
-4. **Workflow** — optionally generates `.github/workflows/kagemusha.yml`
-5. **Gitignore** — adds `outputDir/`, `.kagemusha/.staging/`, `reports/`, auth files to `.gitignore`
-
-Produces:
-
-```
-kagemusha.config.yaml         # base URL, viewport, publish destination
-.kagemusha/definitions.json   # one entry per screenshot
-.kagemusha/auth-state.json    # saved login state (git-ignored)
-.github/workflows/kagemusha.yml
-```
-
-### 2. Adding pages later
-
-| Command | Use when |
-|---------|----------|
-| `npx kagemusha discover` | Re-crawl and pick up newly added routes |
-| `npx kagemusha add <path>` | Add a single page manually, e.g. `npx kagemusha add /settings` |
-| `npx kagemusha add <path> --id custom-id` | Add a second variant of the same page with a custom ID |
-| `npx kagemusha login` | Refresh the login session (run if you get redirected to the login page during capture) |
-| `npx kagemusha list` | Inspect the current definitions, grouped by URL |
-
-One page can have multiple screenshots — use `add` with `--id` to stack states (e.g. `dashboard-empty`, `dashboard-with-data`).
-
-### 3. Editing capture range + annotations — `edit`
-
-```bash
-npx kagemusha edit --id dashboard
-```
-
-Opens the real page in a Playwright browser with a toolbar overlay. Two groups of tools:
-
-**Capture** — what area to screenshot
-- **📷 Full** — capture the whole page (default)
-- **✂️ Crop** — drag a rectangle on the page; re-drag to replace
-
-**Annotate** — decorations drawn on top of the captured image
-- **▭ Rect / → Arrow / T Label** — drag or click to place; drag existing ones to move; Delete to remove
-
-Hit **💾 Save** — both capture range and decorations are written back to `.kagemusha/definitions.json`. The same editor restores everything on next open, so adjusting is iterative.
-
-### 4. Capture — the only verb you need
-
-```bash
-npx kagemusha capture                    # capture, diff, push changed/new to canonical
-npx kagemusha capture --dry-run          # preview only, no canonical update
-npx kagemusha capture --ids a,b          # only those IDs
-npx kagemusha capture --threshold 0.001  # 0.1% pixel diff = flagged
-npx kagemusha capture --open             # open changed/new results in default viewer
-```
-
-What happens:
-
-1. Captures fresh screenshots (with annotations) into `.kagemusha/.staging/` (internal, git-ignored)
-2. **Pulls canonical** from the configured destination:
-   - `s3` mode: downloads `<id>/latest.png` from S3 into your local `outputDir/` (= the working mirror)
-   - `local` mode: reads `outputDir/<id>.png` directly
-3. Diffs each staging file against canonical using [pixelmatch](https://github.com/mapbox/pixelmatch) — counts changed pixels but does not generate a diff image (= consumers compare before vs after raw images instead)
-4. **Default**: for changed/new files only, pushes staging → S3 (or copies into local `outputDir/`). Unchanged files are left alone (history snapshots `<id>/history/<timestamp>.png` keep prior versions for rollback)
-5. **With `--dry-run`**: nothing is published — exit code 1 if any pixel-diff is over threshold (CI gate use case)
-
-Output (default — push happened):
-
-```
-🥷 Kagemusha — Capture
-  canonical: https://kagemusha.example.com
-
-📸 Capturing 3 screenshot(s) to staging...
-
-  ✓ engagements-overview
-  ~ admin-groups (2.34%) → updated
-  + new-page (added to canonical)
-
-changed: 1 / unchanged: 1 / new: 1
-```
-
-Output (`--dry-run`):
-
-```
-🥷 Kagemusha — Capture (dry-run)
-  canonical: https://kagemusha.example.com
-
-  ✓ engagements-overview
-  ~ admin-groups (2.34%) → would update
-  + new-page (would be added)
-
-changed: 1 / unchanged: 1 / new: 1
-
-Drop --dry-run to update canonical (https://kagemusha.example.com).
-```
-
-**Single canonical, kept out of git:**
-
-- For `s3` destination: S3 IS the truth. Local `outputDir/` is just a download mirror, git-ignored
-- For `local` destination: `outputDir/` is the truth, also git-ignored — use it for local testing only
-- No `baselines/` directory; the canonical store (S3 or outputDir) IS the baseline. S3 history snapshots are kept as `<id>/history/<timestamp>.png` for rollback
-
-```
-<outputDir>/                 # local working mirror (git-ignored)
-.kagemusha/.staging/         # internal capture staging (git-ignored)
-reports/                     # summary.json (git-ignored)
-```
-
-`init` adds these to `.gitignore` automatically.
 
 ## Commands
 
 | Command | Description |
-|---------|-------------|
+|---|---|
 | `kagemusha init` | Interactive setup (config + login + discover + workflow) |
-| `kagemusha login` | Open browser and save login session |
-| `kagemusha discover` | Re-crawl the app and add newly found pages |
+| `kagemusha login` | Refresh the saved login session (interactive or scripted) |
+| `kagemusha discover` | Re-crawl the app and add newly-found pages to definitions |
 | `kagemusha add <path>` | Add a single screenshot definition |
-| `kagemusha list` | List all definitions, grouped by URL |
-| `kagemusha edit --id <id>` | Open the visual editor (capture range + annotations) |
-| `kagemusha capture` | Capture, diff vs canonical, push changed/new (use `--dry-run` to preview) |
+| `kagemusha list` | List all definitions |
+| `kagemusha edit --id <id>` | Open the visual editor (crop range + annotations) |
+| `kagemusha capture` | Capture → diff → publish (use `--dry-run` to preview) |
 | `kagemusha validate` | Validate config and definition files |
-| `kagemusha publish` | Publish to Intercom / Zendesk (coming soon) |
 
-## Definition example
+## Configuration
 
-`.kagemusha/definitions.json` is an array of definitions:
+`init` generates these files:
+
+```
+kagemusha.config.yaml         # base URL, viewport, publish destination
+.kagemusha/definitions.json   # one entry per screenshot
+.kagemusha/login.mjs          # optional scripted login (CI-friendly)
+.github/workflows/kagemusha.yml
+```
+
+`kagemusha.config.yaml`:
+
+```yaml
+app:
+  baseUrl: https://your-app.example.com
+screenshot:
+  defaultViewport: { width: 1440, height: 900, deviceScaleFactor: 2 }
+  defaultDiffThreshold: 0.005   # 0.5% pixel diff = flagged
+publish:
+  destination: s3               # or "local" for testing
+  cdnBucket: your-bucket
+  cdnBaseUrl: https://your-bucket.s3.ap-northeast-1.amazonaws.com
+```
+
+Definition (`.kagemusha/definitions.json`):
 
 ```json
 [
   {
     "id": "dashboard",
-    "name": "dashboard",
     "url": "/dashboard",
     "capture": { "mode": "fullPage" },
     "hideElements": [".intercom-launcher"],
     "decorations": [
-      {
-        "type": "rect",
-        "target": { "x": 32, "y": 120, "width": 310, "height": 120 },
-        "style": { "color": "#FF0000", "strokeWidth": 2 }
-      }
+      { "type": "rect", "target": { "x": 32, "y": 120, "width": 310, "height": 120 } }
     ]
-  },
-  {
-    "id": "dashboard-hero",
-    "url": "/dashboard",
-    "capture": {
-      "mode": "crop",
-      "crop": { "start": { "x": 0, "y": 0 }, "end": { "x": 1280, "y": 400 } }
-    },
-    "decorations": []
   }
 ]
 ```
 
-You normally won't edit this by hand — `discover` / `add` / `edit` write it for you.
+Run `kagemusha edit --id dashboard` to set the crop range and add decorations visually.
 
 ## Avoiding loading-state screenshots
 
-After `page.goto`, kagemusha waits `load` event + 3s of best-effort `networkidle` + 500ms hydration buffer. This covers ~80% of pages but **SPAs with component-level skeletons** may still capture mid-loading state. Use `beforeCapture` per definition to wait for a page-specific signal:
-
-### Recipe A: wait for a visible title + buffer
-
-Most pages render the page title before the body content. Wait for it, then add a small buffer:
+After `page.goto` kagemusha waits for `load` event + 3s of best-effort `networkidle` + 500ms hydration buffer. This handles most pages; SPAs with component-level skeletons may still capture mid-loading. Add a `beforeCapture` step per definition:
 
 ```json
 {
-  "id": "analytics-data-overview",
-  "url": "/analytics/data/overview",
+  "id": "analytics-overview",
+  "url": "/analytics/overview",
   "beforeCapture": [
-    { "action": "waitForSelector", "selector": "text=オーバービュー", "timeout": 15000 },
+    { "action": "waitForSelector", "selector": "text=Overview", "timeout": 15000 },
     { "action": "wait", "ms": 3000 }
   ]
 }
 ```
 
-Playwright supports `text=...` selectors for text-content matching out of the box. Cheap and works for most apps.
+Wait for a known page-specific element (page title, chart canvas, first table row, etc.), then a short buffer. Playwright's `text=` selector matches any rendered text.
 
-### Recipe B: wait for a content element
+## Authentication
 
-If your page has a specific component you know appears only after data loads:
-
-```json
-{
-  "beforeCapture": [
-    { "action": "waitForSelector", "selector": "canvas" },
-    { "action": "waitForSelector", "selector": "tbody tr:first-child" }
-  ]
-}
-```
-
-### Recipe C: wait for a loading indicator to disappear
-
-If your app has a common loading spinner / overlay (e.g. `[aria-busy="true"]`), wait for it to leave the DOM:
-
-```json
-{
-  "beforeCapture": [
-    { "action": "waitForSelector", "selector": "[role='progressbar']" },
-    { "action": "wait", "ms": 1500 }
-  ]
-}
-```
-
-(kagemusha currently doesn't support a `state: "hidden"` option directly — use a positive-state wait + buffer instead.)
-
-### Recipe D: app-side ready flag (= optional, requires app code change)
-
-If you control the app, expose a ready flag on `window` (e.g. React Query's `useIsFetching` count):
-
-```tsx
-// In your app provider
-const isFetching = useIsFetching();
-useEffect(() => { (window as any).__appReady = isFetching === 0; }, [isFetching]);
-```
-
-Then in definition use Playwright's `evaluate` to check it via `waitForSelector` doesn't apply; you'd use `wait` with longer ms instead, or add a DOM marker:
-
-```tsx
-return <div data-app-ready={isFetching === 0}>{children}</div>;
-```
-
-```json
-{
-  "beforeCapture": [
-    { "action": "waitForSelector", "selector": "[data-app-ready='true']" }
-  ]
-}
-```
-
-## Deploying to GitHub Actions
-
-To run kagemusha in CI, you need to set up secrets and verify your workflow file.
-
-### 1. Workflow file
-
-`kagemusha init` generates `.github/workflows/kagemusha.yml`. If you've already initialized, verify it exists. For monorepos where kagemusha config lives in a subdirectory, add `defaults.run.working-directory: <subdir>` to the job.
-
-### 2. AWS credentials (for S3 publish)
-
-The IAM identity (user or role) needs `s3:GetObject` / `s3:PutObject` on your bucket. Pick one auth strategy:
-
-**A. Long-lived access keys** (simpler)
-
-\`\`\`bash
-gh secret set AWS_ACCESS_KEY_ID --body "AKIA..."
-gh secret set AWS_SECRET_ACCESS_KEY --body "..."
-\`\`\`
-
-**B. OIDC** (recommended for orgs with established trust policies)
-
-If your org already has a GitHub OIDC provider + IAM Role configured, replace the AWS env vars in the workflow with:
-
-\`\`\`yaml
-permissions:
-  id-token: write
-  contents: read
-
-steps:
-  - uses: aws-actions/configure-aws-credentials@v4
-    with:
-      role-to-assume: arn:aws:iam::<account-id>:role/<role-name>
-      aws-region: ap-northeast-1
-\`\`\`
-
-No keys in secrets.
-
-### 3. Login credentials (if your app needs auth)
-
-**Choose env var names that fit your project.** The skeleton uses `MY_APP_EMAIL` / `MY_APP_PASSWORD` as placeholders — rename them in `.kagemusha/login.mjs` and the workflow.
-
-- ❌ Avoid generic names like `EMAIL` / `PASSWORD` (collide with shell rc / other tools)
-- ❌ Avoid `KAGEMUSHA_*` prefix (reserved for kagemusha's own future config / GUI auth)
-- ✅ Good: `STAGING_EMAIL`, `WEVOX_TEST_EMAIL`, `MYAPP_CI_USER`
-
-\`\`\`bash
-gh secret set STAGING_EMAIL --body "ci-bot@example.com"
-gh secret set STAGING_PASSWORD --body "..."
-\`\`\`
-
-Pass them to the workflow step (match the names your `login.mjs` reads):
-
-\`\`\`yaml
-- run: npx kagemusha capture
-  env:
-    STAGING_EMAIL: \${{ secrets.STAGING_EMAIL }}
-    STAGING_PASSWORD: \${{ secrets.STAGING_PASSWORD }}
-\`\`\`
-
-For SSO / MFA cases where login can't be scripted, fall back to `KAGEMUSHA_STORAGE_STATE` (see Authentication section below).
-
-### 4. AWS region
-
-Auto-detected from `publish.cdnBaseUrl` (e.g. `https://bucket.s3.ap-northeast-1.amazonaws.com` → `ap-northeast-1`). No explicit `AWS_REGION` env needed.
-
-### 5. First-time test
-
-Run the workflow manually before relying on the auto trigger:
-
-\`\`\`bash
-gh workflow run "Kagemusha - Screenshot Update"
-gh run watch
-\`\`\`
-
-If it fails, check:
-- `gh run view --log-failed` — see step-level errors
-- AWS auth: workflow logs should show `Configure AWS credentials` succeeding
-- Login: friendly errors from `aws-error.ts` (`✗ AWS authentication failed`)
-- Login script: errors from `.kagemusha/login.mjs` will surface in the capture step
-
-## Authentication for login-required apps
-
-There are two ways to handle login:
-
-### Local dev: passing env vars
-
-kagemusha doesn't auto-load `.env`. Pick whichever fits your project (substitute the env names you chose):
-
-```bash
-# Direct shell export
-export STAGING_EMAIL=demo@example.com
-export STAGING_PASSWORD=local-dev-password
-npx kagemusha capture
-
-# Or wrap with dotenv-cli (works with your existing .env)
-npx dotenv -e .env -- kagemusha capture
-
-# Or Node 20.6+ built-in
-node --env-file=.env $(which kagemusha) capture
-```
-
-CI uses GitHub Secrets — same env names, just passed via the workflow's `env:` block (no .env needed).
-
-### Option 1 (recommended): scripted auto-login
-
-Best for **CI** and apps with simple form-based login. `kagemusha init` offers to generate a skeleton at `.kagemusha/login.mjs`:
+If your app needs login, `init` generates a `.kagemusha/login.mjs` skeleton:
 
 ```js
 /** @param {import('playwright-chromium').Page} page */
@@ -392,101 +118,32 @@ export const login = async (page) => {
 };
 ```
 
-Edit the selectors / wait condition / env names for your app. `kagemusha capture` auto-runs this on first invocation when no saved session exists, so CI just needs `kagemusha capture` (no separate login step). `baseURL` is set from `kagemusha.config.yaml`, so relative paths work.
+`kagemusha capture` auto-runs this on first invocation when no saved session exists, so CI just needs `npx kagemusha capture` — no separate login step. `baseURL` is set from your config, so relative paths work.
 
-More variations:
+For SSO / MFA / OAuth where scripting is impossible: run `kagemusha login` locally to save `.kagemusha/auth-state.json`, then `base64 -i .kagemusha/auth-state.json | pbcopy` and store the result as a `KAGEMUSHA_STORAGE_STATE` GitHub Secret. The generated workflow shows the restore step (commented out).
 
-```js
-// HTTP Basic Auth — no script needed, set in kagemusha.config.yaml:
-// auth:
-//   httpCredentials: { username: ..., password: ... }
-// (coming soon)
+## Deploying to GitHub Actions
 
-// Token-based:
-export const login = async (page) => {
-  await page.context().setExtraHTTPHeaders({
-    Authorization: \`Bearer \${process.env.MY_APP_TOKEN}\`,
-  });
-};
+`init` generates `.github/workflows/kagemusha.yml`. Required secrets:
 
-// Multi-step (e.g. email → check inbox → magic link):
-export const login = async (page) => {
-  await page.goto("/login");
-  await page.fill('input[name="email"]', process.env.MY_APP_EMAIL);
-  await page.click('button[type="submit"]');
-  // ...fetch the link from a test mailbox API, then navigate to it...
-};
-```
+- `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` — IAM with `s3:GetObject` and `s3:PutObject` on your bucket, or use OIDC with `aws-actions/configure-aws-credentials@v4`
+- Login credentials (named whatever your `login.mjs` reads)
+- `SLACK_WEBHOOK_URL` — optional, see Notifications below
 
-### Option 2: manual login + storageState (fallback for SSO / MFA)
+Region is auto-detected from `publish.cdnBaseUrl` (`*.s3.<region>.amazonaws.com`), so no `AWS_REGION` env needed.
 
-When scripting login is impossible (SSO, OAuth provider, MFA):
-
-1. Run `kagemusha login` locally — opens a browser, you sign in manually
-2. Session is saved to `.kagemusha/auth-state.json`
-3. For CI: `base64 -i .kagemusha/auth-state.json | pbcopy` and save as `KAGEMUSHA_STORAGE_STATE` secret
-4. CI workflow restores it before capture (commented snippet in the generated `kagemusha.yml`)
-
-## CI pipeline
-
-A typical CI flow (uses scripted login from Option 1):
-
-```yaml
-name: Kagemusha
-on:
-  push:
-    branches: [main]
-  workflow_dispatch:
-
-# Cancel in-progress runs when a newer push arrives — kagemusha captures the
-# full set each time, so the latest run subsumes any earlier one.
-concurrency:
-  group: kagemusha
-  cancel-in-progress: true
-
-jobs:
-  update-screenshots:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - run: npm ci
-      - run: npx playwright install chromium
-
-      # capture auto-runs .kagemusha/login.mjs (if present) on first invocation,
-      # then pulls canonical from S3, diffs, pushes only what changed.
-      - run: npx kagemusha capture
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          # Rename to match what your .kagemusha/login.mjs reads
-          MY_APP_EMAIL: ${{ secrets.MY_APP_EMAIL }}
-          MY_APP_PASSWORD: ${{ secrets.MY_APP_PASSWORD }}
-
-      # Keep reports/ (diff PNGs + summary.json) for later review
-      - uses: actions/upload-artifact@v4
-        with:
-          name: kagemusha-reports
-          path: reports/
-          if-no-files-found: ignore
-```
+The workflow triggers on `push: main` and runs `kagemusha capture` automatically.
 
 ## Notifications
 
-`kagemusha capture` writes a structured `reports/summary.json` after every run. CI (or any tool) reads it and decides what to notify. There's intentionally no built-in Slack/Discord adapter — `jq` + a webhook is enough, and you keep full control of the message.
-
-### Public API: `reports/summary.json`
-
-Schema versioned and **part of kagemusha's public API** — additive changes go in minor releases, removals/renames in majors.
+`kagemusha capture` writes `reports/summary.json` with before/after URLs (when destination is S3 and a real push happened):
 
 ```json
 {
   "schemaVersion": "1",
-  "timestamp": "2026-05-13T12:34:56.789Z",
+  "timestamp": "2026-05-15T12:34:56.789Z",
   "dryRun": false,
-  "canonical": "https://wevox-help-pages.s3.ap-northeast-1.amazonaws.com",
+  "canonical": "https://your-bucket.s3.ap-northeast-1.amazonaws.com",
   "counts": { "changed": 1, "unchanged": 5, "new": 2, "missing": 0 },
   "results": [
     {
@@ -505,20 +162,11 @@ Schema versioned and **part of kagemusha's public API** — additive changes go 
 }
 ```
 
-**About `urls`** (only populated for S3 destination + actual push):
+The schema is **part of kagemusha's public API** — additive changes stay on `schemaVersion: "1"`, removals/renames bump it. kagemusha intentionally does not publish a pre-rendered diff image; consumers compare `before` vs `after` raw images (= Slack auto-unfurls both side by side).
 
-- `after`: the newly uploaded `latest.png` URL — always present for `new` / `changed`
-- `before`: the prior version, copied to `previous.png` before being overwritten — undefined on the **first push for an id** (no prior version existed)
-
-Local destination or `--dry-run` leaves `urls` undefined entirely. kagemusha does **not** publish a pre-rendered diff image — consumers compare `before` vs `after` directly (= Slack auto-unfurls both URLs side by side).
-
-### Example: Slack (changed/new only)
-
-In your `.github/workflows/kagemusha.yml`:
+Slack notification (the generated workflow includes this; just set `SLACK_WEBHOOK_URL`):
 
 ```yaml
-- run: npx kagemusha capture
-
 - name: Slack notify
   env:
     SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -530,11 +178,11 @@ In your `.github/workflows/kagemusha.yml`:
         else "📸 *kagemusha*: \($items | length) screenshot(s) updated\n\n" +
              ($items | map(
                if .status == "changed" then
-                 "• ~ `\(.id)` (\((.diffPercentage * 100 | floor) / 100)%)" +
+                 "• ~ \(.id) (\((.diffPercentage * 100 | floor) / 100)%)" +
                  (if .urls.before then "\n  Before: \(.urls.before)" else "" end) +
                  (if .urls.after  then "\n  After:  \(.urls.after)"  else "" end)
                else
-                 "• + `\(.id)` (new)" +
+                 "• + \(.id) (new)" +
                  (if .urls.after then "\n  After: \(.urls.after)" else "" end)
                end
              ) | join("\n\n"))
@@ -546,114 +194,21 @@ In your `.github/workflows/kagemusha.yml`:
       --data "$(jq -n --arg t "$BODY" '{text: $t}')"
 ```
 
-Slack will auto-unfurl the URLs into image previews (assumes the bucket is public-read). If your bucket isn't public, swap to presigned URLs or notify with the run page link only.
-
-`[ -z "$BODY" ] && exit 0` makes the step a no-op when nothing changed or `SLACK_WEBHOOK_URL` is unset.
-
-### Example: Discord (same payload, different key)
-
-```yaml
-- name: Discord notify
-  if: always()
-  run: |
-    [ -f reports/summary.json ] || exit 0
-    BODY=$(jq -r '...' reports/summary.json)  # same as Slack
-    [ -n "$BODY" ] || exit 0
-    curl -X POST "$DISCORD_WEBHOOK_URL" \
-      -H 'Content-Type: application/json' \
-      -d "$(jq -n --arg c "$BODY" '{content: $c}')"
-  env:
-    DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-```
-
-### Example: GitHub PR comment
-
-```yaml
-- name: PR comment
-  if: github.event_name == 'pull_request'
-  uses: actions/github-script@v7
-  with:
-    script: |
-      const fs = require('fs');
-      if (!fs.existsSync('reports/summary.json')) return;
-      const r = JSON.parse(fs.readFileSync('reports/summary.json', 'utf8'));
-      const items = r.results.filter(x => x.status === 'changed' || x.status === 'new');
-      if (items.length === 0) return;
-      const body = `## 📸 kagemusha\n\n` + items.map(x =>
-        x.status === 'changed' ? `- ~ \`${x.id}\` (${x.diffPercentage?.toFixed(2) ?? x.reason}%)` : `- + \`${x.id}\` (new)`
-      ).join('\n');
-      await github.rest.issues.createComment({
-        ...context.repo,
-        issue_number: context.issue.number,
-        body,
-      });
-```
-
-### Local debugging
-
-`reports/summary.json` is written every run, including local. Inspect with:
-
-```bash
-cat reports/summary.json | jq '.counts'
-cat reports/summary.json | jq '.results[] | select(.status == "changed")'
-```
+The same `summary.json` works for Discord (swap `text` → `content`) or PR comments via `actions/github-script`. Slack auto-unfurls the URLs into image previews when your bucket is public-read.
 
 ## Positioning
 
 **kagemusha is NOT a PR-gating VRT tool.** For per-commit baselines and PR diff review with hosted HTML reports, use [reg-suit](https://github.com/reg-viz/reg-suit), [Chromatic](https://www.chromatic.com/), or [Percy](https://percy.io/).
 
-kagemusha is for **post-merge auto-update of help center screenshots**, where:
-- Stable embeddable URLs matter more than per-commit baseline correctness
-- One config + one command should cover capture, diff, and publish
-- The canonical IS the served asset — no separate baseline-vs-published split
-
-## Try it locally
-
-```bash
-cd example
-pnpm install            # or `npm install`, or `bun install`
-pnpm run serve          # Start sample app
-npx kagemusha init      # Set up kagemusha
-npx kagemusha capture --open
-```
-
-## Roadmap
-
-- [x] Screenshot capture with Playwright
-- [x] Annotations (rect, arrow, label)
-- [x] S3 upload with stable URLs
-- [x] Auto-discover pages (SPA-aware BFS crawl)
-- [x] Login via browser (`storageState`) + scripted CI auto-login (`.kagemusha/login.mjs`)
-- [x] Visual editor for capture range (fullPage / crop)
-- [x] **Visual regression — unified `capture` command (publish by default, `--dry-run` to preview)**
-- [ ] HTML diff report (side-by-side, hosted as CI artifact)
-- [ ] Stabilization helpers (clock freezing, animation off, mask regions)
-- [ ] Slack / PR notifications with affected article IDs
-- [ ] Intercom / Zendesk auto-patching
-- [ ] LLM-powered diff descriptions ("what changed in plain English")
+kagemusha is for **post-merge auto-update of help center screenshots**, where stable embeddable URLs matter more than per-commit baseline correctness.
 
 ## Releasing
 
-Release-driven publish via GitHub Actions. Steps for maintainers:
+Maintainer workflow:
 
-1. Bump `version` in `package.json` and the banner in `src/index.ts` (PR + merge to main)
-2. On GitHub: **Releases → Draft a new release**
-   - Tag: `v0.2.0` (must match `package.json` version, prefixed with `v`)
-   - Target: `main`
-   - Click **Generate release notes**, edit if needed
-   - Publish
-3. The `Release` workflow fires on `release: { types: [published] }`:
-   - Verifies the tag matches `package.json`
-   - Runs `pnpm build` + `biome check`
-   - `pnpm publish --provenance` to npm (uses `NPM_TOKEN` secret)
-
-Or via CLI:
-
-```bash
-gh release create v0.2.0 --generate-notes
-```
-
-Required secret on the repo: `NPM_TOKEN` (Automation token from npmjs.com — needs write access to the `@wasao` scope).
+1. Bump `version` in `package.json` and the banner in `src/index.ts` (PR + merge)
+2. Create a GitHub Release with tag `v0.X.Y` (`gh release create v0.X.Y --generate-notes`)
+3. The `Release` workflow publishes to npm with provenance (requires `NPM_TOKEN` secret)
 
 ## License
 
