@@ -425,45 +425,51 @@ jobs:
           path: reports/
           if-no-files-found: ignore
 
-      # Slack notification: only when there are changed/new screenshots.
-      # Add a SLACK_WEBHOOK_URL secret to enable (= leave unset to disable).
-      # Format is defined in .kagemusha/notify-slack.jq — edit that file to
-      # customize. Test locally with:
-      #   jq -r -f .kagemusha/notify-slack.jq reports/summary.json
+      # Slack notification: one message per changed/new screenshot.
+      # Slack unfurls image URLs per-message, so the preview comes out
+      # clean even with many updates. Format defined in
+      # .kagemusha/notify-slack.jq — each line of jq output becomes one
+      # POST body. Test locally:
+      #   jq -c -f .kagemusha/notify-slack.jq reports/summary.json
       - name: Slack notify
         env:
           SLACK_WEBHOOK_URL: \${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
           [ -n "$SLACK_WEBHOOK_URL" ] || exit 0
-          BODY=$(jq -r -f .kagemusha/notify-slack.jq reports/summary.json)
-          [ -z "$BODY" ] && exit 0
-          curl -sS -X POST "$SLACK_WEBHOOK_URL" \\
-            -H 'Content-Type: application/json' \\
-            --data "$(jq -n --arg t "$BODY" '{text: $t}')"
+          jq -c -f .kagemusha/notify-slack.jq reports/summary.json | while IFS= read -r payload; do
+            [ -z "$payload" ] && continue
+            curl -sS -X POST "$SLACK_WEBHOOK_URL" \\
+              -H 'Content-Type: application/json' \\
+              --data "$payload"
+          done
 `;
 
 const generateNotifySlackJq =
 	(): string => `# Slack notification formatter for kagemusha.
 # Called by .github/workflows/kagemusha.yml on reports/summary.json.
-# Edit this file to change the message format (= consumer-owned).
+# Emits ONE Slack payload object per changed/new screenshot — the
+# workflow loops over the lines and POSTs each as a separate message.
+# Slack unfurls image URLs per-message, so before/after previews render
+# cleanly even when many pages changed.
+#
+# Each emitted object is a full Slack chat.postMessage body, so you can
+# customize freely (add blocks, attachments, channel override, etc).
 #
 # Test locally:
-#   jq -r -f .kagemusha/notify-slack.jq reports/summary.json
-#
-# Output: a plain text string. Empty output (= no changed/new) skips Slack.
+#   jq -c -f .kagemusha/notify-slack.jq reports/summary.json
 
-[.results[] | select(.status == "changed" or .status == "new")] as $items
-| if ($items | length) == 0 then empty
-  else "📸 *kagemusha*: \\($items | length) screenshot(s) updated\\n\\n" +
-       ($items | map(
-         if .status == "changed" then
-           "• ~ \\(.id) (\\((.diffPercentage * 100 | floor) / 100)%)" +
-           (if .urls.before then "\\n  Before: \\(.urls.before)" else "" end) +
-           (if .urls.after  then "\\n  After:  \\(.urls.after)"  else "" end)
-         else
-           "• + \\(.id) (new)" +
-           (if .urls.after then "\\n  After: \\(.urls.after)" else "" end)
-         end
-       ) | join("\\n\\n"))
-  end
+.results[]
+| select(.status == "changed" or .status == "new")
+| {
+    text: (
+      if .status == "changed" then
+        "📸 *\\(.id)* changed (\\((.diffPercentage * 100 | floor) / 100)%)" +
+        (if .urls.before then "\\nBefore: \\(.urls.before)" else "" end) +
+        (if .urls.after  then "\\nAfter:  \\(.urls.after)"  else "" end)
+      else
+        "📸 *\\(.id)* added" +
+        (if .urls.after then "\\n\\(.urls.after)" else "" end)
+      end
+    )
+  }
 `;
