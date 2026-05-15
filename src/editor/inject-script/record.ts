@@ -33,6 +33,7 @@ const isOwnUi = (el: EventTarget | null): boolean => {
 
 let svgRef: SVGElement | null = null;
 let panelEl: HTMLDivElement | null = null;
+let pickerOutlineEl: HTMLDivElement | null = null;
 
 // --- Steps panel (read-only list) ---
 
@@ -42,7 +43,9 @@ const ensurePanel = (): HTMLDivElement => {
 	div.className = "kagemusha-steps-panel";
 	div.setAttribute(
 		"style",
-		"position:fixed;right:16px;bottom:16px;max-width:380px;max-height:50vh;" +
+		// Anchored just below the toolbar (top: 60px) so it's visible without
+		// scrolling. Fills available vertical space minus a small bottom margin.
+		"position:fixed;top:60px;right:16px;width:340px;max-height:calc(100vh - 80px);" +
 			"overflow-y:auto;background:#1a1a2e;color:#fff;padding:12px 16px;" +
 			"border-radius:8px;font-family:-apple-system,sans-serif;font-size:12px;" +
 			"line-height:1.5;z-index:var(--kg-z-top);box-shadow:0 4px 16px rgba(0,0,0,0.4);" +
@@ -111,11 +114,10 @@ const updateToolbarLockState = (): void => {
 		const btn = document.getElementById(id) as HTMLButtonElement | null;
 		if (btn) btn.disabled = lock;
 	}
-	// Step builder buttons are only available while recording.
-	for (const id of ["kg-rec-wait", "kg-rec-wfs", "kg-rec-hover"]) {
-		const btn = document.getElementById(id) as HTMLButtonElement | null;
-		if (btn) btn.disabled = !lock;
-	}
+	// Step builder buttons are entirely hidden when not recording (= clearer
+	// than disabled-but-greyed-out; the buttons appear/disappear with Record).
+	const group = document.getElementById("kg-rec-group");
+	if (group) group.classList.toggle("visible", lock);
 	// Record toggle reflects current state.
 	const recBtn = document.getElementById("kg-record");
 	if (recBtn) {
@@ -148,21 +150,56 @@ const setRecording = (on: boolean): void => {
 
 // --- Picker mode (single-shot element selection for + Hover / + WaitForSelector) ---
 
+const pickerButtonId = (kind: "hover" | "waitForSelector"): string =>
+	kind === "hover" ? "kg-rec-hover" : "kg-rec-wfs";
+
 const startPicker = (kind: "hover" | "waitForSelector"): void => {
 	if (!state.recording) return;
 	state.pickerKind = kind;
+	// Highlight the button that initiated picking so user can see they're in
+	// picker mode (and which kind).
+	document.getElementById(pickerButtonId(kind))?.classList.add("picking");
 	if (svgRef) svgRef.style.cursor = "crosshair";
 	showPrompt(
 		kind === "hover"
-			? "Click the element to hover. ESC to cancel."
-			: "Click the element to wait for. ESC to cancel.",
+			? "Hover an element, click to confirm. ESC to cancel."
+			: "Hover an element, click to confirm. ESC to cancel.",
 	);
 };
 
 const cancelPicker = (): void => {
+	if (state.pickerKind) {
+		document
+			.getElementById(pickerButtonId(state.pickerKind))
+			?.classList.remove("picking");
+	}
 	state.pickerKind = null;
 	if (svgRef) svgRef.style.cursor = "";
 	hidePrompt();
+	hidePickerOutline();
+};
+
+const ensurePickerOutline = (): HTMLDivElement => {
+	if (pickerOutlineEl) return pickerOutlineEl;
+	const div = document.createElement("div");
+	div.className = "kagemusha-picker-outline";
+	div.style.display = "none";
+	document.documentElement.appendChild(div);
+	pickerOutlineEl = div;
+	return div;
+};
+
+const showPickerOutline = (rect: DOMRect): void => {
+	const el = ensurePickerOutline();
+	el.style.display = "block";
+	el.style.left = `${rect.left}px`;
+	el.style.top = `${rect.top}px`;
+	el.style.width = `${rect.width}px`;
+	el.style.height = `${rect.height}px`;
+};
+
+const hidePickerOutline = (): void => {
+	if (pickerOutlineEl) pickerOutlineEl.style.display = "none";
 };
 
 let promptEl: HTMLDivElement | null = null;
@@ -259,6 +296,17 @@ const onKeyDownCapture = (e: KeyboardEvent): void => {
 	}
 };
 
+const onMouseMoveCapture = (e: MouseEvent): void => {
+	if (!state.pickerKind) return;
+	if (isOwnUi(e.target)) {
+		hidePickerOutline();
+		return;
+	}
+	const el = e.target as Element | null;
+	if (!el) return;
+	showPickerOutline(el.getBoundingClientRect());
+};
+
 // --- Step builder buttons ---
 
 const promptForWaitMs = (): void => {
@@ -294,6 +342,7 @@ export const initRecord = (svg: SVGElement): void => {
 	document.addEventListener("click", onClickCapture, true);
 	document.addEventListener("change", onChangeCapture, true);
 	document.addEventListener("keydown", onKeyDownCapture, true);
+	document.addEventListener("mousemove", onMouseMoveCapture, true);
 
 	updateToolbarLockState();
 	renderPanel();

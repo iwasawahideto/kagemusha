@@ -27,7 +27,24 @@ const TOOLBAR_HTML = `
     #kagemusha-toolbar button.active { background: #6366f1; border-color: #6366f1; }
     #kagemusha-toolbar button.cap-btn.active { background: #0ea5e9; border-color: #0ea5e9; }
     #kagemusha-toolbar button#kg-record.active { background: #ef4444; border-color: #ef4444; }
+    #kagemusha-toolbar button.picking {
+      background: #0ea5e9; border-color: #0ea5e9; color: #fff;
+      box-shadow: 0 0 0 2px rgba(14,165,233,0.4);
+      animation: kg-picking-pulse 1.2s ease-in-out infinite;
+    }
+    @keyframes kg-picking-pulse {
+      0%, 100% { box-shadow: 0 0 0 2px rgba(14,165,233,0.4); }
+      50%      { box-shadow: 0 0 0 6px rgba(14,165,233,0.1); }
+    }
     #kagemusha-toolbar button:disabled { opacity: 0.4; cursor: not-allowed; }
+    #kagemusha-toolbar #kg-rec-group { display: none; align-items: center; gap: 10px; }
+    #kagemusha-toolbar #kg-rec-group.visible { display: flex; }
+    .kagemusha-picker-outline {
+      position: fixed; border: 2px solid #0ea5e9;
+      background: rgba(14,165,233,0.08); pointer-events: none;
+      z-index: var(--kg-z-below-top); border-radius: 2px;
+      transition: all 60ms ease-out;
+    }
     #kagemusha-toolbar .sep { width: 1px; height: 24px; background: #444; }
     #kagemusha-toolbar .title { color: #888; font-size: 13px; }
     #kagemusha-toolbar .group-label { color: #7a89b0; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; margin-right: -4px; }
@@ -68,9 +85,11 @@ const TOOLBAR_HTML = `
   <div class="sep"></div>
   <span class="group-label">Pre-steps</span>
   <button id="kg-record">🔴 Record</button>
-  <button id="kg-rec-wait" disabled>+ Wait</button>
-  <button id="kg-rec-wfs" disabled>+ WaitForSelector</button>
-  <button id="kg-rec-hover" disabled>+ Hover</button>
+  <div id="kg-rec-group">
+    <button id="kg-rec-wait">+ Wait</button>
+    <button id="kg-rec-wfs">+ WaitForSelector</button>
+    <button id="kg-rec-hover">+ Hover</button>
+  </div>
   <div class="sep"></div>
   <button id="kg-delete">🗑 Delete</button>
   <button class="save-btn" id="kg-save">💾 Save</button>
