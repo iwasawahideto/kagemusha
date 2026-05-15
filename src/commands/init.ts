@@ -253,6 +253,19 @@ export const initCommand = async (): Promise<void> => {
 			generateWorkflowTemplate(),
 		);
 		console.log(chalk.green("✓ Created .github/workflows/kagemusha.yml"));
+
+		// Notification formatter is user-editable (= belongs to the project,
+		// not to kagemusha). Place a Slack-shaped skeleton next to login.mjs.
+		const notifyJqPath = path.join(cwd, ".kagemusha", "notify-slack.jq");
+		if (!fs.existsSync(notifyJqPath)) {
+			fs.mkdirSync(path.dirname(notifyJqPath), { recursive: true });
+			fs.writeFileSync(notifyJqPath, generateNotifySlackJq());
+			console.log(
+				chalk.green(
+					"✓ Created .kagemusha/notify-slack.jq (edit to customize format)",
+				),
+			);
+		}
 	}
 
 	console.log(chalk.bold.green("\n✅ Setup complete!\n"));
@@ -414,31 +427,43 @@ jobs:
 
       # Slack notification: only when there are changed/new screenshots.
       # Add a SLACK_WEBHOOK_URL secret to enable (= leave unset to disable).
-      # URLs (before/after) are populated for S3 destination — Slack
-      # auto-unfurls them into image previews when the bucket is public-read.
+      # Format is defined in .kagemusha/notify-slack.jq — edit that file to
+      # customize. Test locally with:
+      #   jq -r -f .kagemusha/notify-slack.jq reports/summary.json
       - name: Slack notify
         env:
           SLACK_WEBHOOK_URL: \${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
           [ -n "$SLACK_WEBHOOK_URL" ] || exit 0
-          BODY=$(jq -r '
-            [.results[] | select(.status == "changed" or .status == "new")] as $items
-            | if ($items | length) == 0 then empty
-              else "📸 *kagemusha*: \\($items | length) screenshot(s) updated\\n\\n" +
-                   ($items | map(
-                     if .status == "changed" then
-                       "• ~ \\(.id) (\\((.diffPercentage * 100 | floor) / 100)%)" +
-                       (if .urls.before then "\\n  Before: \\(.urls.before)" else "" end) +
-                       (if .urls.after  then "\\n  After:  \\(.urls.after)"  else "" end)
-                     else
-                       "• + \\(.id) (new)" +
-                       (if .urls.after then "\\n  After: \\(.urls.after)" else "" end)
-                     end
-                   ) | join("\\n\\n"))
-              end
-          ' reports/summary.json)
+          BODY=$(jq -r -f .kagemusha/notify-slack.jq reports/summary.json)
           [ -z "$BODY" ] && exit 0
           curl -sS -X POST "$SLACK_WEBHOOK_URL" \\
             -H 'Content-Type: application/json' \\
             --data "$(jq -n --arg t "$BODY" '{text: $t}')"
+`;
+
+const generateNotifySlackJq =
+	(): string => `# Slack notification formatter for kagemusha.
+# Called by .github/workflows/kagemusha.yml on reports/summary.json.
+# Edit this file to change the message format (= consumer-owned).
+#
+# Test locally:
+#   jq -r -f .kagemusha/notify-slack.jq reports/summary.json
+#
+# Output: a plain text string. Empty output (= no changed/new) skips Slack.
+
+[.results[] | select(.status == "changed" or .status == "new")] as $items
+| if ($items | length) == 0 then empty
+  else "📸 *kagemusha*: \\($items | length) screenshot(s) updated\\n\\n" +
+       ($items | map(
+         if .status == "changed" then
+           "• ~ \\(.id) (\\((.diffPercentage * 100 | floor) / 100)%)" +
+           (if .urls.before then "\\n  Before: \\(.urls.before)" else "" end) +
+           (if .urls.after  then "\\n  After:  \\(.urls.after)"  else "" end)
+         else
+           "• + \\(.id) (new)" +
+           (if .urls.after then "\\n  After: \\(.urls.after)" else "" end)
+         end
+       ) | join("\\n\\n"))
+  end
 `;
