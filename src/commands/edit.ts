@@ -10,7 +10,7 @@ import {
 	saveDefinitions,
 } from "../lib/config.js";
 import { waitForPageReady } from "../lib/page-ready.js";
-import type { ScreenshotDefinition } from "../types.js";
+import type { CaptureAction, ScreenshotDefinition } from "../types.js";
 
 interface EditOptions {
 	id?: string;
@@ -18,10 +18,9 @@ interface EditOptions {
 
 const loadEditorScript = (): string => {
 	const __dirname = path.dirname(fileURLToPath(import.meta.url));
+	// Bundled by esbuild into a single IIFE — no ESM artifacts to strip.
 	const scriptPath = path.join(__dirname, "..", "editor", "inject-script.js");
-	return fs
-		.readFileSync(scriptPath, "utf-8")
-		.replace(/^export\s*\{\s*\};?\s*$/m, "");
+	return fs.readFileSync(scriptPath, "utf-8");
 };
 
 export async function editCommand(options: EditOptions): Promise<void> {
@@ -112,6 +111,7 @@ export async function editCommand(options: EditOptions): Promise<void> {
 		const payload = JSON.parse(payloadJson) as {
 			decorations: ScreenshotDefinition["decorations"];
 			capture: ScreenshotDefinition["capture"];
+			beforeCapture?: CaptureAction[];
 		};
 		savedCount = payload.decorations?.length ?? 0;
 		// Update this definition in the full list and save
@@ -122,6 +122,13 @@ export async function editCommand(options: EditOptions): Promise<void> {
 				...def,
 				decorations: payload.decorations,
 				capture: payload.capture,
+				// Editor always sends the current step list (= seeded from existing
+				// beforeCapture on load). Empty array → drop the field entirely so
+				// definitions.json stays clean for defs that don't need pre-steps.
+				beforeCapture:
+					payload.beforeCapture && payload.beforeCapture.length > 0
+						? payload.beforeCapture
+						: undefined,
 			};
 		}
 		saveDefinitions(allDefs, projectRoot);
@@ -152,6 +159,9 @@ export async function editCommand(options: EditOptions): Promise<void> {
 			}
 		).__kagemusha_loadCapture(cap);
 	}, def.capture);
+
+	// (Record mode wiring lives in a follow-up commit — the bridge does not
+	// expose __kagemusha_loadSteps yet, so we skip seeding here.)
 
 	console.log(
 		chalk.blue("🎨 Editor ready. Draw annotations, then click Save.\n"),

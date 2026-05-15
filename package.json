@@ -17,8 +17,9 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsc",
-    "build:clean": "rm -rf dist && tsc",
+    "build": "tsc && pnpm build:inject",
+    "build:inject": "esbuild src/editor/inject-script/index.ts --bundle --format=iife --outfile=dist/editor/inject-script.js --platform=browser --target=es2022",
+    "build:clean": "rm -rf dist && tsc && pnpm build:inject",
     "dev": "bun --watch src/index.ts",
     "typecheck": "tsc --noEmit",
     "lint": "bunx biome check .",
@@ -66,6 +67,7 @@
     "@types/pixelmatch": "^5.2.6",
     "@types/pngjs": "^6.0.5",
     "@types/sharp": "^0.32.0",
+    "esbuild": "^0.28.0",
     "husky": "^9.1.7",
     "typescript": "^5.7.0"
   },
