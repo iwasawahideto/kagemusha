@@ -495,10 +495,11 @@ svg.addEventListener("mousedown", (e: MouseEvent) => {
 		input.value = "";
 		input.placeholder = "Type label...";
 		input.style.cssText =
-			"position:fixed;z-index:9999999;padding:4px 8px;background:#fff;border:none;border-radius:4px;color:#FF0000;font-size:14px;font-family:-apple-system,sans-serif;outline:2px solid #6366f1;min-width:80px;box-shadow:0 2px 8px rgba(0,0,0,0.2);";
+			"position:fixed;z-index:var(--kg-z-top);padding:4px 8px;background:#fff;border:none;border-radius:4px;color:#FF0000;font-size:14px;font-family:-apple-system,sans-serif;outline:2px solid #6366f1;min-width:80px;box-shadow:0 2px 8px rgba(0,0,0,0.2);";
 		input.style.left = `${e.clientX}px`;
 		input.style.top = `${e.clientY}px`;
-		document.body.appendChild(input);
+		// <html> 直下 (toolbar/svg と同じ) なので host SPA の inert に巻き込まれない
+		document.documentElement.appendChild(input);
 		svg.classList.remove("drawing");
 		setTimeout(() => input.focus(), 50);
 
