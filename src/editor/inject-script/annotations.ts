@@ -295,7 +295,10 @@ export const handleKeyDown = (e: KeyboardEvent): void => {
 };
 
 // Load decorations from definitions.json into the SVG layer.
-// Decorations are stored in DPR-scaled coordinates; convert back to CSS pixels.
+// Decorations are stored in DPR-scaled page coordinates; convert back to
+// CSS pixels (= divide by DPR). No toolbar offset — the toolbar is an
+// overlay that doesn't shift host content, so saved/loaded coordinates
+// match capture-time coordinates 1:1.
 export const loadAnnotations = (decorations: Decoration[]): void => {
 	const dpr = window.devicePixelRatio || 1;
 	const svg = getSvg();
@@ -303,7 +306,7 @@ export const loadAnnotations = (decorations: Decoration[]): void => {
 		const id = allocateAnnotationId();
 		if (d.type === "rect" && d.target) {
 			const rx = d.target.x / dpr;
-			const ry = d.target.y / dpr + state.toolbarHeight;
+			const ry = d.target.y / dpr;
 			const rw = d.target.width / dpr;
 			const rh = d.target.height / dpr;
 			const rect = document.createElementNS(SVG_NS, "rect");
@@ -329,9 +332,9 @@ export const loadAnnotations = (decorations: Decoration[]): void => {
 			rect.addEventListener("mousedown", (ev: MouseEvent) => startMove(ev, id));
 		} else if (d.type === "arrow" && d.from && d.to) {
 			const ax1 = d.from.x / dpr;
-			const ay1 = d.from.y / dpr + state.toolbarHeight;
+			const ay1 = d.from.y / dpr;
 			const ax2 = d.to.x / dpr;
-			const ay2 = d.to.y / dpr + state.toolbarHeight;
+			const ay2 = d.to.y / dpr;
 			const line = document.createElementNS(SVG_NS, "line");
 			line.setAttribute("x1", String(ax1));
 			line.setAttribute("y1", String(ay1));
@@ -354,7 +357,7 @@ export const loadAnnotations = (decorations: Decoration[]): void => {
 			line.addEventListener("mousedown", (ev: MouseEvent) => startMove(ev, id));
 		} else if (d.type === "label" && d.position) {
 			const lx = d.position.x / dpr;
-			const ly = d.position.y / dpr + state.toolbarHeight;
+			const ly = d.position.y / dpr;
 			const fontSize = (d.style?.fontSize ?? 14) / dpr;
 			const g = createLabelGroup(id, lx, ly, d.text ?? "", fontSize);
 			svg.appendChild(g);
@@ -371,11 +374,10 @@ export const loadAnnotations = (decorations: Decoration[]): void => {
 };
 
 // Serialize current annotations back to definitions.json shape.
-// Inverse of loadAnnotations: CSS pixels → DPR-scaled, toolbar offset removed.
+// Inverse of loadAnnotations: CSS pixels → DPR-scaled. No toolbar offset.
 export const serializeAnnotations = (): Decoration[] => {
 	const dpr = window.devicePixelRatio || 1;
 	const s = Math.round;
-	const tb = state.toolbarHeight;
 	return state.annotations
 		.map((a): Decoration | null => {
 			if (a.type === "rect") {
@@ -383,7 +385,7 @@ export const serializeAnnotations = (): Decoration[] => {
 					type: "rect",
 					target: {
 						x: s((a.x ?? 0) * dpr),
-						y: s(((a.y ?? 0) - tb) * dpr),
+						y: s((a.y ?? 0) * dpr),
 						width: s((a.width ?? 0) * dpr),
 						height: s((a.height ?? 0) * dpr),
 					},
@@ -395,11 +397,11 @@ export const serializeAnnotations = (): Decoration[] => {
 					type: "arrow",
 					from: {
 						x: s((a.fromX ?? 0) * dpr),
-						y: s(((a.fromY ?? 0) - tb) * dpr),
+						y: s((a.fromY ?? 0) * dpr),
 					},
 					to: {
 						x: s((a.toX ?? 0) * dpr),
-						y: s(((a.toY ?? 0) - tb) * dpr),
+						y: s((a.toY ?? 0) * dpr),
 					},
 					style: { color: "#FF0000", strokeWidth: s(3 * dpr) },
 				};
@@ -410,7 +412,7 @@ export const serializeAnnotations = (): Decoration[] => {
 					text: a.text,
 					position: {
 						x: s((a.x ?? 0) * dpr),
-						y: s(((a.y ?? 0) - tb) * dpr),
+						y: s((a.y ?? 0) * dpr),
 					},
 					style: {
 						fontSize: s(14 * dpr),

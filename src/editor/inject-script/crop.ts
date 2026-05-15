@@ -1,8 +1,8 @@
 // Crop mode — defines the capture region (= what kagemusha actually
 // screenshots). User drags to create a rectangle, with 8 handles (corners +
-// edges) for resize and a body region for move. Coordinates live in page CSS
-// pixels (toolbarHeight-shifted for display); the bridge converts back when
-// serializing.
+// edges) for resize and a body region for move. Coordinates live in raw
+// page CSS pixels — same coordinate system the host page uses, so no
+// translation is needed when capture replays the saved crop.
 
 import { getMousePos } from "./dom.js";
 import { HANDLE_SIZE, MIN_CROP, SVG_NS, state } from "./state.js";
@@ -230,11 +230,13 @@ export const loadCapture = (
 		return;
 	}
 	if (capture.mode === "crop") {
-		// crop is stored in page CSS pixels (not DPR-scaled); shift by toolbar for display
+		// crop is stored in page CSS pixels (not DPR-scaled). No toolbar
+		// offset — the toolbar is an overlay, host content stays at its
+		// native position.
 		const sx = capture.crop.start.x;
-		const sy = capture.crop.start.y + state.toolbarHeight;
+		const sy = capture.crop.start.y;
 		const ex = capture.crop.end.x;
-		const ey = capture.crop.end.y + state.toolbarHeight;
+		const ey = capture.crop.end.y;
 		state.captureCrop = { x: sx, y: sy, w: ex - sx, h: ey - sy };
 		state.captureMode = "crop";
 		setMode("crop");
@@ -246,15 +248,14 @@ export const loadCapture = (
 // Returns null if no crop is set or mode is fullPage.
 export const serializeCapture = (): CaptureSpec => {
 	if (state.captureMode === "crop" && state.captureCrop) {
-		const tb = state.toolbarHeight;
 		const c = state.captureCrop;
 		return {
 			mode: "crop",
 			crop: {
-				start: { x: Math.round(c.x), y: Math.round(c.y - tb) },
+				start: { x: Math.round(c.x), y: Math.round(c.y) },
 				end: {
 					x: Math.round(c.x + c.w),
-					y: Math.round(c.y + c.h - tb),
+					y: Math.round(c.y + c.h),
 				},
 			},
 		};

@@ -16,7 +16,6 @@ import type {
 
 // --- Constants ---
 
-export const TOOLBAR_HEIGHT_FALLBACK = 48;
 export const SVG_NS = "http://www.w3.org/2000/svg";
 export const HANDLE_SIZE = 10;
 export const MIN_CROP = 10;
@@ -33,14 +32,13 @@ export type PickerKind = "hover" | "waitForSelector";
 
 interface EditorState {
 	tool: Tool;
-	toolbarHeight: number;
 	annotations: Annotation[];
 	selectedId: string | null;
 	dragState: DragState | null;
 	nextId: number;
 
 	// Capture region (= what kagemusha actually screenshots).
-	// `captureCrop` is in page CSS pixels (toolbarHeight-shifted for display).
+	// `captureCrop` is in page CSS pixels (raw page coordinates).
 	captureMode: "fullPage" | "crop";
 	captureCrop: { x: number; y: number; w: number; h: number } | null;
 	cropDragState: CropDragState | null;
@@ -55,7 +53,6 @@ interface EditorState {
 
 export const state: EditorState = {
 	tool: "rect",
-	toolbarHeight: TOOLBAR_HEIGHT_FALLBACK,
 	annotations: [],
 	selectedId: null,
 	dragState: null,
