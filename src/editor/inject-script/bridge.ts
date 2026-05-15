@@ -6,15 +6,17 @@
 import { loadAnnotations, serializeAnnotations } from "./annotations.js";
 import { loadCapture, serializeCapture } from "./crop.js";
 import { showErrorToast } from "./dom.js";
+import { loadSteps, serializeSteps } from "./record.js";
 import { state } from "./state.js";
 import { setCaptureMode } from "./toolbar.js";
-import type { CaptureSpec, Decoration } from "./types.js";
+import type { CaptureAction, CaptureSpec, Decoration } from "./types.js";
 
 declare global {
 	interface Window {
 		__kagemusha_save: (payloadJson: string) => void;
 		__kagemusha_loadAnnotations: (decorations: Decoration[]) => void;
 		__kagemusha_loadCapture: (capture: CaptureSpec) => void;
+		__kagemusha_loadSteps: (steps: CaptureAction[]) => void;
 	}
 }
 
@@ -28,8 +30,11 @@ const save = (): void => {
 
 	const decorations = serializeAnnotations();
 	const capture = serializeCapture();
+	const beforeCapture = serializeSteps();
 
-	window.__kagemusha_save(JSON.stringify({ decorations, capture }));
+	window.__kagemusha_save(
+		JSON.stringify({ decorations, capture, beforeCapture }),
+	);
 };
 
 export const initBridge = (): { save: () => void } => {
@@ -38,6 +43,9 @@ export const initBridge = (): { save: () => void } => {
 	};
 	window.__kagemusha_loadCapture = (capture: CaptureSpec) => {
 		loadCapture(capture, (mode) => setCaptureMode(mode));
+	};
+	window.__kagemusha_loadSteps = (steps: CaptureAction[]) => {
+		loadSteps(steps);
 	};
 	return { save };
 };

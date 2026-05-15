@@ -11,6 +11,7 @@
 import * as annotations from "./annotations.js";
 import { initBridge } from "./bridge.js";
 import * as crop from "./crop.js";
+import { initRecord } from "./record.js";
 import { initSvgLayer } from "./svg.js";
 import { initToolbar } from "./toolbar.js";
 
@@ -32,6 +33,7 @@ initToolbar(
 );
 
 crop.initCrop();
+initRecord(svg);
 ({ save: bridgeSave } = initBridge());
 
 // --- Mouse dispatcher ---

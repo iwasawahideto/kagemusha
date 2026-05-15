@@ -2,6 +2,13 @@
 // editor is small enough to avoid one-type-per-file overhead — and the GUI
 // rewrite will likely consume these as a single import.
 
+// CaptureAction is shared with the Node-side runtime — same shape on both
+// sides so what the editor records is exactly what `screenshot.ts` replays.
+export type {
+	CaptureAction,
+	ScreenshotDefinition,
+} from "../../types.js";
+
 export interface Decoration {
 	type: "rect" | "arrow" | "label";
 	target?: { x: number; y: number; width: number; height: number };
@@ -72,8 +79,11 @@ export type Tool = "rect" | "arrow" | "label" | "crop";
 
 // Bridge surface — Node side calls these via `page.evaluate` / `exposeFunction`.
 // Listed here so future GUI ports keep the same contract.
+import type { CaptureAction } from "../../types.js";
+
 export interface EditorBridge {
 	__kagemusha_save: (payloadJson: string) => void;
 	__kagemusha_loadAnnotations: (decorations: Decoration[]) => void;
 	__kagemusha_loadCapture: (capture: CaptureSpec) => void;
+	__kagemusha_loadSteps: (steps: CaptureAction[]) => void;
 }

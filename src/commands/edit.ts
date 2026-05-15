@@ -62,6 +62,14 @@ export async function editCommand(options: EditOptions): Promise<void> {
 	);
 	const page = await context.newPage();
 
+	// Without a dialog listener, Playwright dismisses window.alert/confirm/
+	// prompt instantly. The editor's record mode uses confirm()/prompt() for
+	// "overwrite existing steps?" and "wait how many ms?"; this no-op listener
+	// keeps the native dialog open so the user can actually answer.
+	page.on("dialog", () => {
+		/* leave open for user interaction */
+	});
+
 	// Maximize the OS window via CDP — `--start-maximized` is a hint that
 	// macOS often ignores. CDP's setWindowBounds is authoritative.
 	const cdp = await context.newCDPSession(page);
@@ -160,8 +168,15 @@ export async function editCommand(options: EditOptions): Promise<void> {
 		).__kagemusha_loadCapture(cap);
 	}, def.capture);
 
-	// (Record mode wiring lives in a follow-up commit — the bridge does not
-	// expose __kagemusha_loadSteps yet, so we skip seeding here.)
+	// Seed the Steps panel from existing beforeCapture. Always call (even with
+	// empty array) so the panel can render its initial state.
+	await page.evaluate((steps) => {
+		(
+			window as unknown as {
+				__kagemusha_loadSteps: (s: unknown[]) => void;
+			}
+		).__kagemusha_loadSteps(steps);
+	}, def.beforeCapture ?? []);
 
 	console.log(
 		chalk.blue("🎨 Editor ready. Draw annotations, then click Save.\n"),

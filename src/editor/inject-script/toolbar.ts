@@ -26,6 +26,8 @@ const TOOLBAR_HTML = `
     #kagemusha-toolbar button:hover { background: #2a2a4e; }
     #kagemusha-toolbar button.active { background: #6366f1; border-color: #6366f1; }
     #kagemusha-toolbar button.cap-btn.active { background: #0ea5e9; border-color: #0ea5e9; }
+    #kagemusha-toolbar button#kg-record.active { background: #ef4444; border-color: #ef4444; }
+    #kagemusha-toolbar button:disabled { opacity: 0.4; cursor: not-allowed; }
     #kagemusha-toolbar .sep { width: 1px; height: 24px; background: #444; }
     #kagemusha-toolbar .title { color: #888; font-size: 13px; }
     #kagemusha-toolbar .group-label { color: #7a89b0; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; margin-right: -4px; }
@@ -63,6 +65,12 @@ const TOOLBAR_HTML = `
   <button id="kg-tool-rect" class="active">▭ Rect</button>
   <button id="kg-tool-arrow">→ Arrow</button>
   <button id="kg-tool-label">T Label</button>
+  <div class="sep"></div>
+  <span class="group-label">Pre-steps</span>
+  <button id="kg-record">🔴 Record</button>
+  <button id="kg-rec-wait" disabled>+ Wait</button>
+  <button id="kg-rec-wfs" disabled>+ WaitForSelector</button>
+  <button id="kg-rec-hover" disabled>+ Hover</button>
   <div class="sep"></div>
   <button id="kg-delete">🗑 Delete</button>
   <button class="save-btn" id="kg-save">💾 Save</button>
