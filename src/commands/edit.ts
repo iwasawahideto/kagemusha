@@ -10,6 +10,7 @@ import {
 	saveDefinitions,
 } from "../lib/config.js";
 import { waitForPageReady } from "../lib/page-ready.js";
+import { executeActions } from "../lib/screenshot.js";
 import type { CaptureAction, ScreenshotDefinition } from "../types.js";
 
 interface EditOptions {
@@ -96,6 +97,27 @@ export async function editCommand(options: EditOptions): Promise<void> {
 	// mid-edit would be infuriating.
 	await page.goto(fullUrl, { waitUntil: "load", timeout: 0 });
 	await waitForPageReady(page);
+
+	// Replay existing beforeCapture so the user authors annotations on the
+	// same page state kagemusha will eventually screenshot (= modal closed,
+	// hover active, scrolled-into-view, etc). Non-optional failures here
+	// would break the edit session, so we soften them to a warning — the
+	// user can still operate, just with a less-accurate base state.
+	if (def.beforeCapture?.length) {
+		try {
+			await executeActions(page, def.beforeCapture);
+		} catch (e) {
+			const reason = e instanceof Error ? e.message : String(e);
+			console.log(
+				chalk.yellow(`⚠ beforeCapture step failed during edit: ${reason}`),
+			);
+			console.log(
+				chalk.gray(
+					"  Continuing without that step. Mark it `optional: true` in definitions.json if it's intermittent.",
+				),
+			);
+		}
+	}
 
 	if (def.hideElements?.length) {
 		for (const selector of def.hideElements) {

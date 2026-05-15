@@ -138,7 +138,10 @@ const takeScreenshotBuffer = async (
 const isPresent = async (page: Page, selector: string): Promise<boolean> =>
 	(await page.$(selector)) !== null;
 
-const executeActions = async (
+// Exported so the `edit` command can replay beforeCapture before injecting
+// the editor — that way users author annotations on the same page state
+// kagemusha will eventually screenshot.
+export const executeActions = async (
 	page: Page,
 	actions: CaptureAction[],
 ): Promise<void> => {
