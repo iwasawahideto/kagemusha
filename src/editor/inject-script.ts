@@ -93,8 +93,13 @@ const toolbar = document.createElement("div");
 toolbar.id = "kagemusha-toolbar";
 toolbar.innerHTML = `
   <style>
+    /* INT_MAX guarantees kagemusha UI sits above any host SPA dialog / modal. */
+    :root {
+      --kg-z-top: 2147483647;
+      --kg-z-below-top: 2147483646;
+    }
     #kagemusha-toolbar {
-      position: fixed; top: 0; left: 0; right: 0; z-index: 999999;
+      position: fixed; top: 0; left: 0; right: 0; z-index: var(--kg-z-top);
       background: #16213e; padding: 8px 16px; display: flex; align-items: center; gap: 10px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.3); font-family: -apple-system, sans-serif;
       flex-wrap: nowrap; overflow-x: auto;
@@ -113,7 +118,7 @@ toolbar.innerHTML = `
     #kagemusha-toolbar .save-btn:hover { background: #16a34a; }
     #kagemusha-svg-layer {
       position: absolute; top: 0; left: 0; width: 100%;
-      z-index: 999998; pointer-events: none;
+      z-index: var(--kg-z-below-top); pointer-events: none;
     }
     #kagemusha-svg-layer.drawing { pointer-events: auto; cursor: crosshair; }
     #kagemusha-svg-layer.cropping { pointer-events: auto; cursor: crosshair; }
@@ -131,7 +136,7 @@ toolbar.innerHTML = `
     .kagemusha-hint {
       position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
       color: #fff; background: rgba(0,0,0,0.7); padding: 6px 16px; border-radius: 8px;
-      font-size: 12px; z-index: 999999; font-family: -apple-system, sans-serif;
+      font-size: 12px; z-index: var(--kg-z-top); font-family: -apple-system, sans-serif;
     }
   </style>
   <span class="title">🥷</span>
@@ -147,7 +152,9 @@ toolbar.innerHTML = `
   <button id="kg-delete">🗑 Delete</button>
   <button class="save-btn" id="kg-save">💾 Save</button>
 `;
-document.body.appendChild(toolbar);
+// Append to <html> (not <body>) so SPA modals that mark <body>'s children
+// as `inert` / `aria-hidden="true"` don't disable our toolbar interactions.
+document.documentElement.appendChild(toolbar);
 toolbarHeight =
 	Math.ceil(toolbar.getBoundingClientRect().height) || TOOLBAR_HEIGHT_FALLBACK;
 document.body.style.paddingTop = `${toolbarHeight}px`;
@@ -156,13 +163,13 @@ const hint = document.createElement("div");
 hint.className = "kagemusha-hint";
 hint.textContent =
 	"Click and drag to add annotations. Click to select. Press Delete to remove.";
-document.body.appendChild(hint);
+document.documentElement.appendChild(hint);
 
 // --- SVG LAYER ---
 const svg = document.createElementNS(svgNS, "svg");
 svg.id = "kagemusha-svg-layer";
 svg.classList.add("drawing");
-document.body.appendChild(svg);
+document.documentElement.appendChild(svg);
 
 const updateSvgSize = () => {
 	svg.setAttribute("width", String(window.innerWidth));
@@ -488,10 +495,11 @@ svg.addEventListener("mousedown", (e: MouseEvent) => {
 		input.value = "";
 		input.placeholder = "Type label...";
 		input.style.cssText =
-			"position:fixed;z-index:9999999;padding:4px 8px;background:#fff;border:none;border-radius:4px;color:#FF0000;font-size:14px;font-family:-apple-system,sans-serif;outline:2px solid #6366f1;min-width:80px;box-shadow:0 2px 8px rgba(0,0,0,0.2);";
+			"position:fixed;z-index:var(--kg-z-top);padding:4px 8px;background:#fff;border:none;border-radius:4px;color:#FF0000;font-size:14px;font-family:-apple-system,sans-serif;outline:2px solid #6366f1;min-width:80px;box-shadow:0 2px 8px rgba(0,0,0,0.2);";
 		input.style.left = `${e.clientX}px`;
 		input.style.top = `${e.clientY}px`;
-		document.body.appendChild(input);
+		// <html> 直下 (toolbar/svg と同じ) なので host SPA の inert に巻き込まれない
+		document.documentElement.appendChild(input);
 		svg.classList.remove("drawing");
 		setTimeout(() => input.focus(), 50);
 
@@ -817,10 +825,29 @@ _win.__kagemusha_loadCapture = (capture: CaptureSpec) => {
 	}
 };
 
+// In-page error toast — `window.alert()` would be auto-dismissed by
+// Playwright's default dialog handler (= the user sees a flash they can't
+// read). We render our own non-blocking toast under <html> so it can't be
+// inert'd by host SPAs (same reason as the toolbar).
+const showErrorToast = (message: string, ms = 5000): void => {
+	const toast = document.createElement("div");
+	toast.setAttribute(
+		"style",
+		"position:fixed;top:72px;left:50%;transform:translateX(-50%);" +
+			"background:#dc2626;color:#fff;padding:12px 20px;border-radius:8px;" +
+			"font-family:-apple-system,sans-serif;font-size:14px;line-height:1.4;" +
+			"z-index:var(--kg-z-top);box-shadow:0 4px 12px rgba(0,0,0,0.3);" +
+			"max-width:480px;white-space:pre-wrap;text-align:center;",
+	);
+	toast.textContent = message;
+	document.documentElement.appendChild(toast);
+	setTimeout(() => toast.remove(), ms);
+};
+
 // --- SAVE ---
 const save = () => {
 	if (captureMode === "crop" && !captureCrop) {
-		alert(
+		showErrorToast(
 			"Crop mode is active but no area is drawn.\nDrag to define an area, or switch to Full Page.",
 		);
 		return;

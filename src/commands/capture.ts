@@ -8,6 +8,7 @@ import {
 	createS3Canonical,
 	getCanonicalPath,
 	getOutputDir,
+	type PushUrls,
 } from "../lib/canonical.js";
 import { findProjectRoot, loadConfig, loadDefinitions } from "../lib/config.js";
 import { type DiffStatus, diffImages } from "../lib/diff.js";
@@ -15,7 +16,6 @@ import { captureScreenshots } from "../lib/screenshot.js";
 import {
 	cleanupStaging,
 	ensureStagingDirs,
-	getReportDiffPath,
 	getStagingDir,
 	getStagingPath,
 } from "../lib/staging.js";
@@ -155,43 +155,28 @@ const runCapture = async (options: CaptureOptions): Promise<void> => {
 	const failureReasons = new Map(failures.map((f) => [f.id, f.reason]));
 
 	// 2. Diff each staging vs canonical
+	// Two-pass: first compute diffs serially (pixelmatch is CPU-bound, no win
+	// from parallelizing), then push everything to remote in parallel
+	// (= I/O-bound, big win — 50 changed defs go from ~25s serial to ~3-4s).
+	//
+	// `onUrls` is bundled into each PendingPush so the result-entry mutation is
+	// co-located with the entry it belongs to (= no separate index-zipped array
+	// that has to stay in sync).
+	type PendingPush = {
+		id: string;
+		stagingPath: string;
+		canonicalPath: string;
+		onUrls: (urls: PushUrls | undefined) => void;
+	};
+
 	const results: DiffStatus[] = [];
 	// Track final paths (where the user can find each capture after the run)
 	const finalPathFor = new Map<string, string>();
-
-	const promote = async (
-		id: string,
-		stagingPath: string,
-		canonicalPath: string,
-	): Promise<void> => {
-		fs.mkdirSync(outputDir, { recursive: true });
-		// Push to remote first so a failure doesn't leave local ahead of S3
-		if (remote) {
-			await remote.push(id, stagingPath);
-		}
-		fs.copyFileSync(stagingPath, canonicalPath);
-		fs.rmSync(stagingPath, { force: true });
-		finalPathFor.set(id, canonicalPath);
-	};
-
-	// Either copy staging → canonical (default), or just remember the staging
-	// path so the user can inspect it (dry-run).
-	const applyOrStage = async (
-		id: string,
-		stagingPath: string,
-		canonicalPath: string,
-	): Promise<void> => {
-		if (dryRun) {
-			finalPathFor.set(id, stagingPath);
-		} else {
-			await promote(id, stagingPath, canonicalPath);
-		}
-	};
+	const pendingPushes: PendingPush[] = [];
 
 	for (const def of definitions) {
 		const canonicalPath = getCanonicalPath(config, projectRoot, def.id);
 		const stagingPath = getStagingPath(projectRoot, def.id);
-		const diffPath = getReportDiffPath(projectRoot, def.id);
 
 		if (!fs.existsSync(stagingPath)) {
 			results.push({
@@ -209,39 +194,85 @@ const runCapture = async (options: CaptureOptions): Promise<void> => {
 				? "ok"
 				: "not-found";
 
+		const queuePush = (push: PendingPush): void => {
+			if (dryRun) {
+				finalPathFor.set(def.id, push.stagingPath);
+			} else {
+				pendingPushes.push(push);
+			}
+		};
+
 		// New: no canonical yet — adopt staging as canonical (unless dry-run)
 		if (fetchResult === "not-found") {
-			await applyOrStage(def.id, stagingPath, canonicalPath);
-			results.push({ id: def.id, status: "new" });
+			const result: DiffStatus = { id: def.id, status: "new" };
+			results.push(result);
+			queuePush({
+				id: def.id,
+				stagingPath,
+				canonicalPath,
+				onUrls: (urls) => {
+					if (urls) result.urls = urls;
+				},
+			});
 			continue;
 		}
 
-		const result = await diffImages(canonicalPath, stagingPath, diffPath);
+		const result = await diffImages(canonicalPath, stagingPath);
 
 		if (result.match) {
 			results.push({ id: def.id, status: "unchanged" });
-			fs.rmSync(diffPath, { force: true });
 			fs.rmSync(stagingPath, { force: true });
 			finalPathFor.set(def.id, canonicalPath);
 		} else if (result.reason === "layout-diff") {
-			await applyOrStage(def.id, stagingPath, canonicalPath);
-			results.push({
+			const item: DiffStatus = {
 				id: def.id,
 				status: "changed",
 				reason: "layout-diff",
 				canonical: result.canonical,
 				staging: result.staging,
+			};
+			results.push(item);
+			queuePush({
+				id: def.id,
+				stagingPath,
+				canonicalPath,
+				onUrls: (urls) => {
+					if (urls) item.urls = urls;
+				},
 			});
 		} else {
-			await applyOrStage(def.id, stagingPath, canonicalPath);
-			results.push({
+			const item: DiffStatus = {
 				id: def.id,
 				status: "changed",
 				reason: "pixel-diff",
 				diffPercentage: result.diffPercentage,
-				diffPath,
+			};
+			results.push(item);
+			queuePush({
+				id: def.id,
+				stagingPath,
+				canonicalPath,
+				onUrls: (urls) => {
+					if (urls) item.urls = urls;
+				},
 			});
 		}
+	}
+
+	// Parallel promote — push to remote + copy to local outputDir.
+	// Promise.all keeps S3 throughput high while node manages local fs serially.
+	if (pendingPushes.length > 0) {
+		fs.mkdirSync(outputDir, { recursive: true });
+		await Promise.all(
+			pendingPushes.map(async ({ id, stagingPath, canonicalPath, onUrls }) => {
+				// Push to remote first so a failure doesn't leave local ahead of S3
+				const urls = remote ? await remote.push(id, stagingPath) : undefined;
+				fs.copyFileSync(stagingPath, canonicalPath);
+				fs.rmSync(stagingPath, { force: true });
+				finalPathFor.set(id, canonicalPath);
+				onUrls(urls);
+			}),
+		);
 	}
 
 	// 3. Print summary
@@ -268,9 +299,6 @@ const runCapture = async (options: CaptureOptions): Promise<void> => {
 			console.log(
 				chalk.yellow(`  ~ ${r.id} (${detail}) ${chalk.gray(action)}`),
 			);
-			if (r.reason === "pixel-diff") {
-				console.log(chalk.gray(`      ↳ ${r.diffPath}`));
-			}
 		}
 	}
 

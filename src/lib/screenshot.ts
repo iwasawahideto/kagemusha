@@ -8,6 +8,7 @@ import type {
 import { drawAnnotations } from "./annotate.js";
 import { defaultContextOptions } from "./auth.js";
 import { getOutputDir } from "./canonical.js";
+import { waitForPageReady } from "./page-ready.js";
 
 type Page = import("playwright-chromium").Page;
 type BrowserContext = import("playwright-chromium").BrowserContext;
@@ -80,7 +81,8 @@ const captureOne = async (
 	}
 
 	const url = resolveUrl(config.app.baseUrl, def.url, def.urlParams);
-	await page.goto(url, { waitUntil: "networkidle", timeout: 60000 });
+	await page.goto(url, { waitUntil: "load", timeout: 60000 });
+	await waitForPageReady(page);
 
 	if (def.hideElements?.length) {
 		await hideElements(page, def.hideElements);

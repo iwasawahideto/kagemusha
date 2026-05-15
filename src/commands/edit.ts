@@ -9,6 +9,7 @@ import {
 	loadDefinitions,
 	saveDefinitions,
 } from "../lib/config.js";
+import { waitForPageReady } from "../lib/page-ready.js";
 import type { ScreenshotDefinition } from "../types.js";
 
 interface EditOptions {
@@ -84,7 +85,10 @@ export async function editCommand(options: EditOptions): Promise<void> {
 	const fullUrl = new URL(urlPath, config.app.baseUrl).toString();
 
 	console.log(chalk.blue(`🌐 Opening ${fullUrl}...`));
-	await page.goto(fullUrl, { waitUntil: "networkidle" });
+	// No timeout — user is interactively editing, hitting a 30s timeout
+	// mid-edit would be infuriating.
+	await page.goto(fullUrl, { waitUntil: "load", timeout: 0 });
+	await waitForPageReady(page);
 
 	if (def.hideElements?.length) {
 		for (const selector of def.hideElements) {

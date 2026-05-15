@@ -82,28 +82,14 @@ const runScriptedLogin = async (
 		try {
 			await loginFn(page);
 		} catch (e) {
-			const url = page.url();
-			const screenshotPath = path.join(
-				projectRoot,
-				".kagemusha",
-				"login-failure.png",
-			);
-			await page
-				.screenshot({ path: screenshotPath, fullPage: true })
-				.catch(() => {});
 			console.error(chalk.red(`\n✗ Login script threw: ${formatError(e)}`));
-			console.error(chalk.gray(`  Last URL: ${url}`));
-			console.error(
-				chalk.gray(
-					`  Screenshot: ${path.relative(projectRoot, screenshotPath)}`,
-				),
-			);
+			console.error(chalk.gray(`  Last URL: ${page.url()}`));
 			console.error(
 				chalk.yellow(
 					`\nHint:\n` +
-						`  - Re-run with --headed to watch: \`kagemusha login --headed\`\n` +
+						`  - Re-run with --headed to watch the flow live: \`kagemusha login --headed\`\n` +
 						`  - Verify form selectors in .kagemusha/login.mjs match the live page\n` +
-						`  - Check that EMAIL / PASSWORD env vars are correct`,
+						`  - Check that the credentials env vars are correct`,
 				),
 			);
 			throw new LoginError(`login script threw: ${formatError(e)}`);
@@ -114,22 +100,9 @@ const runScriptedLogin = async (
 
 		// Verify login actually succeeded — landing on /login* means we failed silently.
 		if (landingPath.startsWith("/login") || landingPath === "/") {
-			const screenshotPath = path.join(
-				projectRoot,
-				".kagemusha",
-				"login-failure.png",
-			);
-			await page
-				.screenshot({ path: screenshotPath, fullPage: true })
-				.catch(() => {});
 			console.error(
 				chalk.red(
 					`\n✗ Login script completed but the page is still on ${landingPath}.`,
-				),
-			);
-			console.error(
-				chalk.gray(
-					`  Screenshot: ${path.relative(projectRoot, screenshotPath)}`,
 				),
 			);
 			console.error(
