@@ -144,7 +144,6 @@ export async function editCommand(options: EditOptions): Promise<void> {
 			beforeCapture?: CaptureAction[];
 		};
 		savedCount = payload.decorations?.length ?? 0;
-		// Update this definition in the full list and save
 		const allDefs = loadDefinitions(projectRoot);
 		const idx = allDefs.findIndex((d) => d.id === def.id);
 		if (idx >= 0) {

@@ -15,6 +15,14 @@ import { initRecord } from "./record.js";
 import { initSvgLayer } from "./svg.js";
 import { initToolbar } from "./toolbar.js";
 
+// Prevent inject-time elements (toolbar / svg / hint / panel) from
+// extending document.documentElement.scrollHeight. Some SPAs run
+// responsive layout calculations based on documentH; if the value
+// differs between edit and capture, modals can land at different Y
+// positions. Forcing <html> overflow:hidden caps scrollHeight at the
+// viewport height — matching capture-time behavior.
+document.documentElement.style.overflow = "hidden";
+
 const { svg } = initSvgLayer();
 
 let bridgeSave: () => void = () => {};
