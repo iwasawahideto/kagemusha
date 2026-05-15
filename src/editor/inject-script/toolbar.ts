@@ -1,14 +1,12 @@
-// Toolbar — fixed-position bar at the top of the page with annotation tool
-// buttons and capture-mode toggles. Appended to <html> so host SPA modals
-// that mark <body>'s children as `inert` / `aria-hidden="true"` don't disable
-// our toolbar interactions.
+// Toolbar — floating bar of annotation/capture controls, draggable by its
+// ⋮⋮ handle. Appended to <html> so host SPA modals that mark <body>'s
+// children as `inert` / `aria-hidden="true"` don't disable interactions.
 //
 // No coordinate offset is applied — the toolbar is purely an overlay, host
 // page content stays at its native document positions. Annotations are
 // recorded in raw page coordinates (= `e.pageX/Y`) so what you draw in edit
 // is exactly what kagemusha screenshots at capture time. If the toolbar
-// covers content the user wants to annotate, the ⇅ button flips it between
-// top and bottom of the viewport.
+// covers content the user wants to annotate, drag it out of the way.
 
 import { state } from "./state.js";
 import type { Tool } from "./types.js";
@@ -21,15 +19,20 @@ const TOOLBAR_HTML = `
       --kg-z-below-top: 2147483646;
     }
     #kagemusha-toolbar {
-      position: fixed; top: 0; left: 0; right: 0; z-index: var(--kg-z-top);
+      position: fixed; top: 16px; left: 16px; z-index: var(--kg-z-top);
       background: #16213e; padding: 8px 16px; display: flex; align-items: center; gap: 10px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.3); font-family: -apple-system, sans-serif;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.35); font-family: -apple-system, sans-serif;
       flex-wrap: nowrap; overflow-x: auto;
+      border-radius: 10px;
+      max-width: calc(100vw - 32px);
     }
-    #kagemusha-toolbar.bottom {
-      top: auto; bottom: 0;
-      box-shadow: 0 -2px 8px rgba(0,0,0,0.3);
+    #kagemusha-toolbar .kg-drag-handle {
+      cursor: move; padding: 4px 6px; margin: -2px 2px -2px -10px;
+      color: #888; font-size: 14px; line-height: 1; user-select: none;
+      border-right: 1px solid #2a2a4e;
     }
+    #kagemusha-toolbar .kg-drag-handle:hover { color: #fff; }
+    #kagemusha-toolbar.kg-dragging { opacity: 0.95; cursor: grabbing; }
     #kagemusha-toolbar button {
       padding: 6px 12px; border: 1px solid #444; border-radius: 6px;
       background: #1a1a2e; color: #fff; font-size: 13px; cursor: pointer;
@@ -86,8 +89,8 @@ const TOOLBAR_HTML = `
       font-size: 12px; z-index: var(--kg-z-top); font-family: -apple-system, sans-serif;
     }
   </style>
+  <span class="kg-drag-handle" title="Drag to move toolbar">⋮⋮</span>
   <span class="title">🥷</span>
-  <button id="kg-toolbar-flip" title="Move toolbar to bottom / top">⇅</button>
   <div class="sep"></div>
   <span class="group-label">Capture</span>
   <button id="kg-cap-full" class="cap-btn active">📷 Full</button>
@@ -166,10 +169,51 @@ export const initToolbar = (cb: ToolbarCallbacks, svg: SVGElement): void => {
 	document
 		.getElementById("kg-save")
 		?.addEventListener("click", () => cb.onSave());
-	document.getElementById("kg-toolbar-flip")?.addEventListener("click", () => {
-		// Flip between top-edge and bottom-edge dock. Lets the user uncover
-		// whichever end of the page they want to annotate.
-		toolbar.classList.toggle("bottom");
+
+	wireDragHandle(toolbar);
+};
+
+// Drag the toolbar by its ⋮⋮ handle. Position is clamped to the viewport so
+// it can't slip off-screen. Kept simple — no docking magic or persistence.
+const wireDragHandle = (toolbar: HTMLElement): void => {
+	const handle = toolbar.querySelector(".kg-drag-handle");
+	if (!handle) return;
+
+	let dragging = false;
+	let offsetX = 0;
+	let offsetY = 0;
+
+	handle.addEventListener("mousedown", (e) => {
+		const m = e as MouseEvent;
+		m.preventDefault();
+		const rect = toolbar.getBoundingClientRect();
+		offsetX = m.clientX - rect.left;
+		offsetY = m.clientY - rect.top;
+		dragging = true;
+		toolbar.classList.add("kg-dragging");
+		// Prevent text selection while dragging.
+		document.body.style.userSelect = "none";
+	});
+
+	document.addEventListener("mousemove", (e: MouseEvent) => {
+		if (!dragging) return;
+		const x = Math.max(
+			0,
+			Math.min(window.innerWidth - toolbar.offsetWidth, e.clientX - offsetX),
+		);
+		const y = Math.max(
+			0,
+			Math.min(window.innerHeight - toolbar.offsetHeight, e.clientY - offsetY),
+		);
+		toolbar.style.left = `${x}px`;
+		toolbar.style.top = `${y}px`;
+	});
+
+	document.addEventListener("mouseup", () => {
+		if (!dragging) return;
+		dragging = false;
+		toolbar.classList.remove("kg-dragging");
+		document.body.style.userSelect = "";
 	});
 };
 
