@@ -36,13 +36,10 @@ export type FetchResult = "ok" | "not-found";
  * - `after`: the new `latest.png` we just uploaded
  * - `before`: the previous `latest.png`, copied to `previous.png` before
  *   being overwritten. Undefined when no prior version existed (= first push)
- * - `diff`: visualization of the pixel diff, uploaded as `latest.diff.png`.
- *   Undefined when caller didn't pass a `diffPath` (= new entry or layout-diff)
  */
 export interface PushUrls {
 	after: string;
 	before?: string;
-	diff?: string;
 }
 
 // Extract AWS region from a virtual-hosted–style S3 URL or s3.<region>.amazonaws.com endpoint.
@@ -77,14 +74,10 @@ export class S3Canonical {
 		return `${id}/previous.png`;
 	}
 
-	private diffKey(id: string): string {
-		return `${id}/diff.png`;
-	}
-
 	private historyKey(id: string, timestamp: string): string {
 		// Group history snapshots under a sub-prefix so the bucket list
-		// shows `latest.png` / `previous.png` / `diff.png` cleanly without
-		// historical snapshots interleaved alphabetically.
+		// shows `latest.png` / `previous.png` cleanly without historical
+		// snapshots interleaved alphabetically.
 		return `${id}/history/${timestamp}.png`;
 	}
 
@@ -117,20 +110,18 @@ export class S3Canonical {
 	 *   1. Copy existing latest.png → previous.png (no-op if missing)
 	 *   2. Upload localPath → latest.png
 	 *   3. Upload localPath → history/<timestamp>.png
-	 *   4. Upload diffPath → diff.png (if diffPath provided)
 	 *
 	 * Step 1 must complete first (otherwise the soon-to-be-overwritten latest
-	 * would be replaced before the snapshot is taken). Steps 2-4 target
+	 * would be replaced before the snapshot is taken). Steps 2-3 target
 	 * different keys and run in parallel.
 	 *
-	 * Returns URLs for each side effect so callers can surface them in
-	 * `reports/summary.json` (= public API).
+	 * Returns URLs (`before` / `after`) so callers can surface them in
+	 * `reports/summary.json` (= public API). Consumers compare before vs after
+	 * visually; kagemusha intentionally does not publish a pre-generated diff
+	 * image (= pixelmatch's red overlay is alarming and adds little vs the
+	 * raw pair).
 	 */
-	async push(
-		id: string,
-		localPath: string,
-		diffPath?: string,
-	): Promise<PushUrls> {
+	async push(id: string, localPath: string): Promise<PushUrls> {
 		const body = fs.readFileSync(localPath);
 
 		// 1. Snapshot the soon-to-be-overwritten latest as `previous`.
@@ -155,9 +146,8 @@ export class S3Canonical {
 			// first push for this id — no previous yet, leave beforeUrl undefined
 		}
 
-		// 2-4. Independent uploads — run in parallel (= ~3x faster than serial).
+		// 2-3. Independent uploads — run in parallel (= ~2x faster than serial).
 		const timestamp = new Date().toISOString().replaceAll(":", "-");
-		const hasDiff = !!(diffPath && fs.existsSync(diffPath));
 		await Promise.all([
 			// 2. latest
 			this.client.send(
@@ -178,24 +168,11 @@ export class S3Canonical {
 					ContentType: "image/png",
 				}),
 			),
-			// 4. diff visualization (= pixel-diff changes only)
-			hasDiff
-				? this.client.send(
-						new PutObjectCommand({
-							Bucket: this.bucket,
-							Key: this.diffKey(id),
-							Body: fs.readFileSync(diffPath as string),
-							ContentType: "image/png",
-							CacheControl: "no-cache",
-						}),
-					)
-				: Promise.resolve(undefined),
 		]);
 
 		return {
 			after: this.urlFor(this.latestKey(id)),
 			before: beforeUrl,
-			diff: hasDiff ? this.urlFor(this.diffKey(id)) : undefined,
 		};
 	}
 

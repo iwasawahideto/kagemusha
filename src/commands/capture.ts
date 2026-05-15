@@ -16,7 +16,6 @@ import { captureScreenshots } from "../lib/screenshot.js";
 import {
 	cleanupStaging,
 	ensureStagingDirs,
-	getReportDiffPath,
 	getStagingDir,
 	getStagingPath,
 } from "../lib/staging.js";
@@ -163,7 +162,6 @@ const runCapture = async (options: CaptureOptions): Promise<void> => {
 		id: string;
 		stagingPath: string;
 		canonicalPath: string;
-		diffPath: string | undefined;
 	};
 
 	const results: DiffStatus[] = [];
@@ -177,7 +175,6 @@ const runCapture = async (options: CaptureOptions): Promise<void> => {
 	for (const def of definitions) {
 		const canonicalPath = getCanonicalPath(config, projectRoot, def.id);
 		const stagingPath = getStagingPath(projectRoot, def.id);
-		const diffPath = getReportDiffPath(projectRoot, def.id);
 
 		if (!fs.existsSync(stagingPath)) {
 			results.push({
@@ -205,12 +202,7 @@ const runCapture = async (options: CaptureOptions): Promise<void> => {
 
 		// New: no canonical yet — adopt staging as canonical (unless dry-run)
 		if (fetchResult === "not-found") {
-			queuePush({
-				id: def.id,
-				stagingPath,
-				canonicalPath,
-				diffPath: undefined,
-			});
+			queuePush({ id: def.id, stagingPath, canonicalPath });
 			const result: DiffStatus = { id: def.id, status: "new" };
 			results.push(result);
 			urlPatchers.push((urls) => {
@@ -219,21 +211,14 @@ const runCapture = async (options: CaptureOptions): Promise<void> => {
 			continue;
 		}
 
-		const result = await diffImages(canonicalPath, stagingPath, diffPath);
+		const result = await diffImages(canonicalPath, stagingPath);
 
 		if (result.match) {
 			results.push({ id: def.id, status: "unchanged" });
-			fs.rmSync(diffPath, { force: true });
 			fs.rmSync(stagingPath, { force: true });
 			finalPathFor.set(def.id, canonicalPath);
 		} else if (result.reason === "layout-diff") {
-			// layout-diff has no pixelmatch diff PNG to upload (= dimensions differ)
-			queuePush({
-				id: def.id,
-				stagingPath,
-				canonicalPath,
-				diffPath: undefined,
-			});
+			queuePush({ id: def.id, stagingPath, canonicalPath });
 			const item: DiffStatus = {
 				id: def.id,
 				status: "changed",
@@ -246,18 +231,12 @@ const runCapture = async (options: CaptureOptions): Promise<void> => {
 				if (urls) item.urls = urls;
 			});
 		} else {
-			queuePush({
-				id: def.id,
-				stagingPath,
-				canonicalPath,
-				diffPath,
-			});
+			queuePush({ id: def.id, stagingPath, canonicalPath });
 			const item: DiffStatus = {
 				id: def.id,
 				status: "changed",
 				reason: "pixel-diff",
 				diffPercentage: result.diffPercentage,
-				diffPath,
 			};
 			results.push(item);
 			urlPatchers.push((urls) => {
@@ -271,19 +250,17 @@ const runCapture = async (options: CaptureOptions): Promise<void> => {
 	if (pendingPushes.length > 0) {
 		fs.mkdirSync(outputDir, { recursive: true });
 		const pushedUrls = await Promise.all(
-			pendingPushes.map(
-				async ({ id, stagingPath, canonicalPath, diffPath }) => {
-					// Push to remote first so a failure doesn't leave local ahead of S3
-					let urls: PushUrls | undefined;
-					if (remote) {
-						urls = await remote.push(id, stagingPath, diffPath);
-					}
-					fs.copyFileSync(stagingPath, canonicalPath);
-					fs.rmSync(stagingPath, { force: true });
-					finalPathFor.set(id, canonicalPath);
-					return urls;
-				},
-			),
+			pendingPushes.map(async ({ id, stagingPath, canonicalPath }) => {
+				// Push to remote first so a failure doesn't leave local ahead of S3
+				let urls: PushUrls | undefined;
+				if (remote) {
+					urls = await remote.push(id, stagingPath);
+				}
+				fs.copyFileSync(stagingPath, canonicalPath);
+				fs.rmSync(stagingPath, { force: true });
+				finalPathFor.set(id, canonicalPath);
+				return urls;
+			}),
 		);
 		for (let i = 0; i < pushedUrls.length; i++) {
 			urlPatchers[i](pushedUrls[i]);
@@ -314,9 +291,6 @@ const runCapture = async (options: CaptureOptions): Promise<void> => {
 			console.log(
 				chalk.yellow(`  ~ ${r.id} (${detail}) ${chalk.gray(action)}`),
 			);
-			if (r.reason === "pixel-diff") {
-				console.log(chalk.gray(`      ↳ ${r.diffPath}`));
-			}
 		}
 	}
 

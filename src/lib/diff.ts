@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import path from "node:path";
 import pixelmatch from "pixelmatch";
 import { PNG } from "pngjs";
 
@@ -16,12 +15,13 @@ export interface Dimensions {
  * - `after`: the new `latest.png` URL
  * - `before`: the previous `latest.png` URL (= `previous.png`). Undefined on
  *   the first push for this id (no prior version existed).
- * - `diff`: pixel-diff visualization URL. Undefined for `new` or `layout-diff`.
+ *
+ * No `diff` URL — kagemusha intentionally does not publish a pre-generated
+ * diff visualization. Consumers compare before vs after raw images instead.
  */
 export interface ResultUrls {
 	after: string;
 	before?: string;
-	diff?: string;
 }
 
 export type DiffStatus =
@@ -33,7 +33,6 @@ export type DiffStatus =
 			status: "changed";
 			reason: "pixel-diff";
 			diffPercentage: number;
-			diffPath: string;
 			urls?: ResultUrls;
 	  }
 	| {
@@ -71,13 +70,13 @@ const readPng = (filePath: string): PNG =>
 	PNG.sync.read(fs.readFileSync(filePath));
 
 /**
- * Compare two PNG files using pixelmatch and write the diff visualization.
- * If dimensions differ, returns layout-diff without writing a diff image.
+ * Compare two PNG files using pixelmatch. Returns a structured result with
+ * the diff percentage; we deliberately don't write a diff PNG anywhere
+ * (= the red overlay is alarming + adds little value over the raw pair).
  */
 export const diffImages = async (
 	baseline: string,
 	current: string,
-	diffPath: string,
 	options: DiffOptions = {},
 ): Promise<DiffResult> => {
 	const a = readPng(baseline);
@@ -93,6 +92,7 @@ export const diffImages = async (
 	}
 
 	const { width, height } = a;
+	// pixelmatch requires an output buffer even though we discard it.
 	const diff = new PNG({ width, height });
 
 	const diffCount = pixelmatch(a.data, b.data, diff.data, width, height, {
@@ -105,9 +105,6 @@ export const diffImages = async (
 	if (diffCount === 0) {
 		return { match: true };
 	}
-
-	fs.mkdirSync(path.dirname(diffPath), { recursive: true });
-	fs.writeFileSync(diffPath, PNG.sync.write(diff));
 
 	return {
 		match: false,

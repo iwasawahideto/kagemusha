@@ -104,10 +104,9 @@ What happens:
 2. **Pulls canonical** from the configured destination:
    - `s3` mode: downloads `<id>/latest.png` from S3 into your local `outputDir/` (= the working mirror)
    - `local` mode: reads `outputDir/<id>.png` directly
-3. Diffs each staging file against canonical using [pixelmatch](https://github.com/mapbox/pixelmatch)
-4. Writes diff visualizations to `reports/diff/<id>.diff.png` for changed files
-5. **Default**: for changed/new files only, pushes staging → S3 (or copies into local `outputDir/`). Unchanged files are left alone (history snapshots `<id>/history/<timestamp>.png` keep prior versions for rollback)
-6. **With `--dry-run`**: nothing is published — exit code 1 if any pixel-diff is over threshold (CI gate use case)
+3. Diffs each staging file against canonical using [pixelmatch](https://github.com/mapbox/pixelmatch) — counts changed pixels but does not generate a diff image (= consumers compare before vs after raw images instead)
+4. **Default**: for changed/new files only, pushes staging → S3 (or copies into local `outputDir/`). Unchanged files are left alone (history snapshots `<id>/history/<timestamp>.png` keep prior versions for rollback)
+5. **With `--dry-run`**: nothing is published — exit code 1 if any pixel-diff is over threshold (CI gate use case)
 
 Output (default — push happened):
 
@@ -119,7 +118,6 @@ Output (default — push happened):
 
   ✓ engagements-overview
   ~ admin-groups (2.34%) → updated
-      ↳ reports/diff/admin-groups.diff.png
   + new-page (added to canonical)
 
 changed: 1 / unchanged: 1 / new: 1
@@ -149,7 +147,7 @@ Drop --dry-run to update canonical (https://kagemusha.example.com).
 ```
 <outputDir>/                 # local working mirror (git-ignored)
 .kagemusha/.staging/         # internal capture staging (git-ignored)
-reports/diff/                # diff visualizations (git-ignored)
+reports/                     # summary.json (git-ignored)
 ```
 
 `init` adds these to `.gitignore` automatically.
@@ -201,6 +199,79 @@ reports/diff/                # diff visualizations (git-ignored)
 ```
 
 You normally won't edit this by hand — `discover` / `add` / `edit` write it for you.
+
+## Avoiding loading-state screenshots
+
+After `page.goto`, kagemusha waits `load` event + 3s of best-effort `networkidle` + 500ms hydration buffer. This covers ~80% of pages but **SPAs with component-level skeletons** may still capture mid-loading state. Use `beforeCapture` per definition to wait for a page-specific signal:
+
+### Recipe A: wait for a visible title + buffer
+
+Most pages render the page title before the body content. Wait for it, then add a small buffer:
+
+```json
+{
+  "id": "analytics-data-overview",
+  "url": "/analytics/data/overview",
+  "beforeCapture": [
+    { "action": "waitForSelector", "selector": "text=オーバービュー", "timeout": 15000 },
+    { "action": "wait", "ms": 3000 }
+  ]
+}
+```
+
+Playwright supports `text=...` selectors for text-content matching out of the box. Cheap and works for most apps.
+
+### Recipe B: wait for a content element
+
+If your page has a specific component you know appears only after data loads:
+
+```json
+{
+  "beforeCapture": [
+    { "action": "waitForSelector", "selector": "canvas" },
+    { "action": "waitForSelector", "selector": "tbody tr:first-child" }
+  ]
+}
+```
+
+### Recipe C: wait for a loading indicator to disappear
+
+If your app has a common loading spinner / overlay (e.g. `[aria-busy="true"]`), wait for it to leave the DOM:
+
+```json
+{
+  "beforeCapture": [
+    { "action": "waitForSelector", "selector": "[role='progressbar']" },
+    { "action": "wait", "ms": 1500 }
+  ]
+}
+```
+
+(kagemusha currently doesn't support a `state: "hidden"` option directly — use a positive-state wait + buffer instead.)
+
+### Recipe D: app-side ready flag (= optional, requires app code change)
+
+If you control the app, expose a ready flag on `window` (e.g. React Query's `useIsFetching` count):
+
+```tsx
+// In your app provider
+const isFetching = useIsFetching();
+useEffect(() => { (window as any).__appReady = isFetching === 0; }, [isFetching]);
+```
+
+Then in definition use Playwright's `evaluate` to check it via `waitForSelector` doesn't apply; you'd use `wait` with longer ms instead, or add a DOM marker:
+
+```tsx
+return <div data-app-ready={isFetching === 0}>{children}</div>;
+```
+
+```json
+{
+  "beforeCapture": [
+    { "action": "waitForSelector", "selector": "[data-app-ready='true']" }
+  ]
+}
+```
 
 ## Deploying to GitHub Actions
 
@@ -423,11 +494,9 @@ Schema versioned and **part of kagemusha's public API** — additive changes go 
       "status": "changed",
       "reason": "pixel-diff",
       "diffPercentage": 2.34,
-      "diffPath": "reports/diff/engagements-overview.diff.png",
       "urls": {
         "before": "https://.../engagements-overview/previous.png",
-        "after": "https://.../engagements-overview/latest.png",
-        "diff": "https://.../engagements-overview/diff.png"
+        "after": "https://.../engagements-overview/latest.png"
       }
     },
     { "id": "new-page", "status": "new", "urls": { "after": "https://.../new-page/latest.png" } },
@@ -440,9 +509,8 @@ Schema versioned and **part of kagemusha's public API** — additive changes go 
 
 - `after`: the newly uploaded `latest.png` URL — always present for `new` / `changed`
 - `before`: the prior version, copied to `previous.png` before being overwritten — undefined on the **first push for an id** (no prior version existed)
-- `diff`: pixel-diff visualization (`diff.png`) — undefined for `new` (no diff base) or `layout-diff` (dimensions differ, pixelmatch can't run)
 
-Local destination or `--dry-run` leaves `urls` undefined entirely.
+Local destination or `--dry-run` leaves `urls` undefined entirely. kagemusha does **not** publish a pre-rendered diff image — consumers compare `before` vs `after` directly (= Slack auto-unfurls both URLs side by side).
 
 ### Example: Slack (changed/new only)
 
@@ -462,10 +530,9 @@ In your `.github/workflows/kagemusha.yml`:
         else "📸 *kagemusha*: \($items | length) screenshot(s) updated\n\n" +
              ($items | map(
                if .status == "changed" then
-                 "• ~ `\(.id)` (\((.diffPercentage * 100 | floor) / 100)%)\n" +
-                 (if .urls.before then "  Before: \(.urls.before)\n" else "" end) +
-                 (if .urls.after  then "  After:  \(.urls.after)\n"  else "" end) +
-                 (if .urls.diff   then "  Diff:   \(.urls.diff)"     else "" end)
+                 "• ~ `\(.id)` (\((.diffPercentage * 100 | floor) / 100)%)" +
+                 (if .urls.before then "\n  Before: \(.urls.before)" else "" end) +
+                 (if .urls.after  then "\n  After:  \(.urls.after)"  else "" end)
                else
                  "• + `\(.id)` (new)" +
                  (if .urls.after then "\n  After: \(.urls.after)" else "" end)

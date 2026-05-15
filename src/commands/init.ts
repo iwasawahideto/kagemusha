@@ -405,7 +405,7 @@ jobs:
           MY_APP_EMAIL: \${{ secrets.MY_APP_EMAIL }}
           MY_APP_PASSWORD: \${{ secrets.MY_APP_PASSWORD }}
 
-      # Keep diff visualizations + summary.json as artifacts for later review
+      # Keep summary.json as artifact for later review
       - uses: actions/upload-artifact@v4
         with:
           name: kagemusha-reports
@@ -414,7 +414,7 @@ jobs:
 
       # Slack notification: only when there are changed/new screenshots.
       # Add a SLACK_WEBHOOK_URL secret to enable (= leave unset to disable).
-      # URLs (before/after/diff) are populated for S3 destination — Slack
+      # URLs (before/after) are populated for S3 destination — Slack
       # auto-unfurls them into image previews when the bucket is public-read.
       - name: Slack notify
         env:
@@ -429,8 +429,7 @@ jobs:
                      if .status == "changed" then
                        "• ~ \\(.id) (\\((.diffPercentage * 100 | floor) / 100)%)" +
                        (if .urls.before then "\\n  Before: \\(.urls.before)" else "" end) +
-                       (if .urls.after  then "\\n  After:  \\(.urls.after)"  else "" end) +
-                       (if .urls.diff   then "\\n  Diff:   \\(.urls.diff)"   else "" end)
+                       (if .urls.after  then "\\n  After:  \\(.urls.after)"  else "" end)
                      else
                        "• + \\(.id) (new)" +
                        (if .urls.after then "\\n  After: \\(.urls.after)" else "" end)
