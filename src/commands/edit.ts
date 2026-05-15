@@ -24,7 +24,7 @@ const loadEditorScript = (): string => {
 	return fs.readFileSync(scriptPath, "utf-8");
 };
 
-export async function editCommand(options: EditOptions): Promise<void> {
+export const editCommand = async (options: EditOptions): Promise<void> => {
 	console.log(chalk.bold("\n🥷 Kagemusha — Annotation Editor\n"));
 
 	const projectRoot = findProjectRoot();
@@ -217,4 +217,4 @@ export async function editCommand(options: EditOptions): Promise<void> {
 	console.log(
 		chalk.bold.green(`\n✅ Saved ${savedCount} annotation(s) for ${def.id}\n`),
 	);
-}
+};
