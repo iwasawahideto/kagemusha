@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.6](https://github.com/iwasawahideto/kagemusha/compare/v0.3.5...v0.3.6) (2026-05-18)
+
+
+### Bug Fixes
+
+* Apple Silicon Rosetta 2 warn + remove stale playwright install chromium step ([#30](https://github.com/iwasawahideto/kagemusha/issues/30)) ([78280aa](https://github.com/iwasawahideto/kagemusha/commit/78280aabbc6ace617c056cae9db979355fc31168))
+
 ## [0.3.5](https://github.com/iwasawahideto/kagemusha/compare/v0.3.4...v0.3.5) (2026-05-18)
 
 
