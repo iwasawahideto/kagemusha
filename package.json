@@ -10,7 +10,8 @@
     "kagemusha": "dist/index.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "templates"
   ],
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",
