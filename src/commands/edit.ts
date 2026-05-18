@@ -10,6 +10,7 @@ import {
 	saveDefinitions,
 } from "../lib/config.js";
 import { waitForPageReady } from "../lib/page-ready.js";
+import { launchOptionsFor } from "../lib/playwright-launch.js";
 import { executeActions } from "../lib/screenshot.js";
 import type { CaptureAction, ScreenshotDefinition } from "../types.js";
 
@@ -53,10 +54,11 @@ export const editCommand = async (options: EditOptions): Promise<void> => {
 
 	const def = definitions[0];
 
-	const { chromium } = await import("playwright-chromium");
+	const { chromium } = await import("playwright-core");
 	const browser = await chromium.launch({
 		headless: false,
 		args: ["--start-maximized"],
+		...launchOptionsFor(),
 	});
 	const context = await browser.newContext(
 		defaultContextOptions(config, projectRoot),

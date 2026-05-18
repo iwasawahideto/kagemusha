@@ -9,13 +9,14 @@ import { drawAnnotations } from "./annotate.js";
 import { defaultContextOptions } from "./auth.js";
 import { getOutputDir } from "./canonical.js";
 import { waitForPageReady } from "./page-ready.js";
+import { launchOptionsFor } from "./playwright-launch.js";
 
-type Page = import("playwright-chromium").Page;
-type BrowserContext = import("playwright-chromium").BrowserContext;
+type Page = import("playwright-core").Page;
+type BrowserContext = import("playwright-core").BrowserContext;
 
 const loadPlaywright = async () => {
 	try {
-		return await import("playwright-chromium");
+		return await import("playwright-core");
 	} catch {
 		throw new Error(
 			"Playwright is required for screenshot capture.\n" +
@@ -39,7 +40,10 @@ export const captureScreenshots = async (
 	fs.mkdirSync(outputDir, { recursive: true });
 
 	const { chromium } = await loadPlaywright();
-	const browser = await chromium.launch({ headless: true });
+	const browser = await chromium.launch({
+		headless: true,
+		...launchOptionsFor(),
+	});
 	const failures: CaptureFailure[] = [];
 
 	try {

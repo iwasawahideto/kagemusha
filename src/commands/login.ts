@@ -10,9 +10,10 @@ import {
 } from "../lib/auth.js";
 import { findProjectRoot, loadConfig } from "../lib/config.js";
 import { LoginError } from "../lib/login-error.js";
+import { launchOptionsFor } from "../lib/playwright-launch.js";
 import type { KagemushaConfig } from "../types.js";
 
-type Page = import("playwright-chromium").Page;
+type Page = import("playwright-core").Page;
 
 interface LoginScriptModule {
 	login: (page: Page) => Promise<void>;
@@ -70,8 +71,11 @@ const runScriptedLogin = async (
 		);
 	}
 
-	const { chromium } = await import("playwright-chromium");
-	const browser = await chromium.launch({ headless: !options.headed });
+	const { chromium } = await import("playwright-core");
+	const browser = await chromium.launch({
+		headless: !options.headed,
+		...launchOptionsFor(),
+	});
 	// projectRoot=undefined → no storageState applied (we are creating one).
 	const context = await browser.newContext(
 		defaultContextOptions(config, undefined),
@@ -164,8 +168,11 @@ const runInteractiveLogin = async (
 
 	const loginUrl = new URL(loginPath, config.app.baseUrl).toString();
 
-	const { chromium } = await import("playwright-chromium");
-	const browser = await chromium.launch({ headless: false });
+	const { chromium } = await import("playwright-core");
+	const browser = await chromium.launch({
+		headless: false,
+		...launchOptionsFor(),
+	});
 	const context = await browser.newContext(
 		defaultContextOptions(config, undefined),
 	);
