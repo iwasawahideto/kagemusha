@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.5](https://github.com/iwasawahideto/kagemusha/compare/v0.3.4...v0.3.5) (2026-05-18)
+
+
+### Bug Fixes
+
+* handle null diffPercentage in Slack notify jq template ([#28](https://github.com/iwasawahideto/kagemusha/issues/28)) ([93fb254](https://github.com/iwasawahideto/kagemusha/commit/93fb2541edcd87841fea2ad2ec1ae6ee6f2d7428))
+
 ## [0.3.4](https://github.com/iwasawahideto/kagemusha/compare/v0.3.3...v0.3.4) (2026-05-18)
 
 
