@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/iwasawahideto/kagemusha/compare/v0.3.0...v0.3.1) (2026-05-18)
+
+
+### Bug Fixes
+
+* use pnpm in prepublishOnly + document commit conventions ([#17](https://github.com/iwasawahideto/kagemusha/issues/17)) ([7c28995](https://github.com/iwasawahideto/kagemusha/commit/7c28995efdf5b09beffc845df5366bd7e1abdb3e))
+
 ## [0.3.0](https://github.com/iwasawahideto/kagemusha/compare/v0.2.0...v0.3.0) (2026-05-18)
 
 
