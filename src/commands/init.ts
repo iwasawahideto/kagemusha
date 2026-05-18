@@ -79,7 +79,7 @@ export const initCommand = async (): Promise<void> => {
 	const config: KagemushaConfig = {
 		app: { baseUrl },
 		screenshot: {
-			defaultViewport: { width: 1280, height: 720, deviceScaleFactor: 2 },
+			defaultViewport: { width: 1440, height: 900, deviceScaleFactor: 2 },
 			defaultDiffThreshold: 0.005,
 		},
 		publish:
