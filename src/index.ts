@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import chalk from "chalk";
 import { Command } from "commander";
 import { addCommand } from "./commands/add.js";
@@ -11,8 +13,16 @@ import { listCommand } from "./commands/list.js";
 import { loginCommand } from "./commands/login.js";
 import { validateCommand } from "./commands/validate.js";
 
+// Read version from package.json at runtime so release-please only needs to
+// update one file (= package.json) on every bump. dist/index.js sits next
+// to dist/, so package.json is two levels up (= ../package.json).
+const pkgPath = fileURLToPath(new URL("../package.json", import.meta.url));
+const VERSION = (
+	JSON.parse(readFileSync(pkgPath, "utf-8")) as { version: string }
+).version;
+
 const BANNER = `
-  ${chalk.bold("kagemusha")} ${chalk.gray("v0.2.0")}
+  ${chalk.bold("kagemusha")} ${chalk.gray(`v${VERSION}`)}
   ${chalk.dim("The shadow warrior for your documentation.")}
 
   ${chalk.white("Auto-update help center screenshots")}
@@ -23,7 +33,7 @@ const program = new Command();
 
 program
 	.name("kagemusha")
-	.version("0.2.0")
+	.version(VERSION)
 	.addHelpText("beforeAll", BANNER)
 	.configureHelp({
 		sortSubcommands: false,
