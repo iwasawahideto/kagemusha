@@ -68,7 +68,8 @@ jobs:
       - run: pnpm build
       - run: pnpm exec biome check
 
+      # npm CLI を使う (= Trusted Publishing / OIDC auth は npm CLI のみが
+      # 正式サポート。pnpm publish は --provenance までは効くが OIDC
+      # auth は token 必須のまま動かなかった)。
       - name: Publish to npm
-        run: pnpm publish --access public --no-git-checks --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public --provenance
