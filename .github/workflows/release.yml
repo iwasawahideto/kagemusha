@@ -38,6 +38,12 @@ jobs:
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+          # PAT 経由で PR を作る。GITHUB_TOKEN だと PR が他 workflow を
+          # trigger しない GitHub の制限のせいで CI が走らず status check が
+          # 永久に未達になるため、release-please 公式推奨どおり PAT を使う。
+          # PAT 権限: Contents (write), Pull requests (write),
+          #           Workflows (write), Issues (write)
+          token: ${{ secrets.GH_PAT }}
 
   publish:
     needs: release-please
