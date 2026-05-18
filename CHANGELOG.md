@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.4](https://github.com/iwasawahideto/kagemusha/compare/v0.3.3...v0.3.4) (2026-05-18)
+
+
+### Bug Fixes
+
+* upgrade npm to latest for Trusted Publishing support ([#23](https://github.com/iwasawahideto/kagemusha/issues/23)) ([f6eb9af](https://github.com/iwasawahideto/kagemusha/commit/f6eb9afa8357c79858dc84a67b09598626052fac))
+
 ## [0.3.3](https://github.com/iwasawahideto/kagemusha/compare/v0.3.2...v0.3.3) (2026-05-18)
 
 
