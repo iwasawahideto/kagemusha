@@ -132,22 +132,35 @@ const takeScreenshotBuffer = async (
 	}
 };
 
-const executeActions = async (
+// Returns false (= skip the step) when `optional: true` and the selector
+// doesn't match anything on the page. The page.$ probe completes
+// instantly — no Playwright timeout involved.
+const isPresent = async (page: Page, selector: string): Promise<boolean> =>
+	(await page.$(selector)) !== null;
+
+// Exported so the `edit` command can replay beforeCapture before injecting
+// the editor — that way users author annotations on the same page state
+// kagemusha will eventually screenshot.
+export const executeActions = async (
 	page: Page,
 	actions: CaptureAction[],
 ): Promise<void> => {
 	for (const action of actions) {
 		switch (action.action) {
 			case "click":
+				if (action.optional && !(await isPresent(page, action.selector))) break;
 				await page.click(action.selector);
 				break;
 			case "type":
+				if (action.optional && !(await isPresent(page, action.selector))) break;
 				await page.fill(action.selector, action.text);
 				break;
 			case "select":
+				if (action.optional && !(await isPresent(page, action.selector))) break;
 				await page.selectOption(action.selector, action.value);
 				break;
 			case "hover":
+				if (action.optional && !(await isPresent(page, action.selector))) break;
 				await page.hover(action.selector);
 				break;
 			case "scroll":
@@ -163,9 +176,16 @@ const executeActions = async (
 				await page.waitForTimeout(action.ms);
 				break;
 			case "waitForSelector":
-				await page.waitForSelector(action.selector, {
-					timeout: action.timeout ?? 10000,
-				});
+				try {
+					await page.waitForSelector(action.selector, {
+						timeout: action.timeout ?? 10000,
+					});
+				} catch (e) {
+					// `optional: true` turns wait-for-selector failures into a
+					// no-op (= the rest of beforeCapture continues). Without
+					// optional, the timeout bubbles up and fails the capture.
+					if (!action.optional) throw e;
+				}
 				break;
 			case "waitForNavigation":
 				await page.waitForLoadState("networkidle", {

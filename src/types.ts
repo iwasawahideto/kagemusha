@@ -53,14 +53,25 @@ export interface ScreenshotDefinition {
 	};
 }
 
+// `optional: true` makes a selector-based action silently skip when the
+// target element is absent at capture time (= e.g. a welcome modal that
+// only appears in a fresh session). Without it, missing elements cause
+// the capture to fail. Defaults to false so existing definitions retain
+// strict behavior — record auto-injects optional:true for click/type/
+// select since those are inferred from the user's current page state.
 export type CaptureAction =
-	| { action: "click"; selector: string }
-	| { action: "type"; selector: string; text: string }
-	| { action: "select"; selector: string; value: string }
-	| { action: "hover"; selector: string }
+	| { action: "click"; selector: string; optional?: boolean }
+	| { action: "type"; selector: string; text: string; optional?: boolean }
+	| { action: "select"; selector: string; value: string; optional?: boolean }
+	| { action: "hover"; selector: string; optional?: boolean }
 	| { action: "scroll"; selector?: string; y: number }
 	| { action: "wait"; ms: number }
-	| { action: "waitForSelector"; selector: string; timeout?: number }
+	| {
+			action: "waitForSelector";
+			selector: string;
+			timeout?: number;
+			optional?: boolean;
+	  }
 	| { action: "waitForNavigation"; timeout?: number }
 	| { action: "evaluate"; script: string };
 
