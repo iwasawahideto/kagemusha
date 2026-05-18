@@ -19,8 +19,7 @@ const loadPlaywright = async () => {
 		return await import("playwright-core");
 	} catch {
 		throw new Error(
-			"Playwright is required for screenshot capture.\n" +
-				"Install it with: npm install -D playwright && npx playwright install chromium",
+			"playwright-core could not be loaded — kagemusha's install may be corrupted. Try reinstalling @wasao/kagemusha.",
 		);
 	}
 };
