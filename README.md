@@ -198,11 +198,19 @@ kagemusha is for **post-merge auto-update of help center screenshots**, where st
 
 ## Releasing
 
-Maintainer workflow:
+Automated via [release-please](https://github.com/googleapis/release-please).
 
-1. Bump `version` in `package.json` and the banner in `src/index.ts` (PR + merge)
-2. Create a GitHub Release with tag `v0.X.Y` (`gh release create v0.X.Y --generate-notes`)
-3. The `Release` workflow publishes to npm with provenance (requires `NPM_TOKEN` secret)
+1. **Write PRs with [Conventional Commits](https://www.conventionalcommits.org/) titles**:
+   - `feat: ...` → minor bump (= 0.2.0 → 0.3.0)
+   - `fix: ...` → patch bump (= 0.2.0 → 0.2.1)
+   - `feat!: ...` or `BREAKING CHANGE:` in body → major (= 1.0.0+)
+   - `chore: ...` / `docs: ...` → no version bump
+   - Squash merge propagates the PR title as the commit on `main`.
+2. **release-please opens a "Release PR" automatically** whenever there's anything to release. It bumps `package.json`, updates `.release-please-manifest.json`, and regenerates `CHANGELOG.md`.
+3. **Merge the Release PR** → release-please tags `v0.X.Y` and publishes a GitHub Release.
+4. **`release.yml` triggers on `release: published`** → builds and runs `pnpm publish --provenance` to npm. Requires the `NPM_TOKEN` secret.
+
+The `kagemusha` CLI reads its version from `package.json` at runtime, so release-please only needs to touch one file.
 
 ## License
 
