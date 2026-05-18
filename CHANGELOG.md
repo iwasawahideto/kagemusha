@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.3](https://github.com/iwasawahideto/kagemusha/compare/v0.3.2...v0.3.3) (2026-05-18)
+
+
+### Bug Fixes
+
+* use npm CLI for publish so OIDC Trusted Publishing works ([#21](https://github.com/iwasawahideto/kagemusha/issues/21)) ([48ad54f](https://github.com/iwasawahideto/kagemusha/commit/48ad54fb8ee2db7c488900c5c67e77a846d9f65c))
+
 ## [0.3.2](https://github.com/iwasawahideto/kagemusha/compare/v0.3.1...v0.3.2) (2026-05-18)
 
 
