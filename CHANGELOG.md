@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/iwasawahideto/kagemusha/compare/v0.3.1...v0.3.2) (2026-05-18)
+
+
+### Bug Fixes
+
+* use npm Trusted Publishing (OIDC) instead of NPM_TOKEN ([#19](https://github.com/iwasawahideto/kagemusha/issues/19)) ([b7653eb](https://github.com/iwasawahideto/kagemusha/commit/b7653eb7142671368bb5ac755d0859fbf97a4f67))
+
 ## [0.3.1](https://github.com/iwasawahideto/kagemusha/compare/v0.3.0...v0.3.1) (2026-05-18)
 
 
