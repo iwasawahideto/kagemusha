@@ -9,18 +9,35 @@ import { discoverPages } from "../lib/crawl.js";
 import { deriveIdFromPath } from "../lib/definition.js";
 import type { KagemushaConfig, ScreenshotDefinition } from "../types.js";
 
+// inquirer の confirm は default 次第で "(Y/n)" / "(y/N)" と大文字小文字が
+// 混在して読みにくい。list で常に「Yes / No」を表示する形に統一する。
+const askYesNo = async (
+	message: string,
+	defaultYes: boolean,
+): Promise<boolean> => {
+	const { ans } = await inquirer.prompt<{ ans: boolean }>({
+		type: "list",
+		name: "ans",
+		message,
+		choices: [
+			{ name: "Yes", value: true },
+			{ name: "No", value: false },
+		],
+		default: defaultYes,
+	});
+	return ans;
+};
+
 export const initCommand = async (): Promise<void> => {
 	console.log(chalk.bold("\n🥷 Kagemusha — Setup\n"));
 
 	const cwd = process.cwd();
 
 	if (fs.existsSync(path.join(cwd, "kagemusha.config.yaml"))) {
-		const { overwrite } = await inquirer.prompt<{ overwrite: boolean }>({
-			type: "confirm",
-			name: "overwrite",
-			message: "kagemusha.config.yaml already exists. Overwrite?",
-			default: false,
-		});
+		const overwrite = await askYesNo(
+			"kagemusha.config.yaml already exists. Overwrite?",
+			false,
+		);
 		if (!overwrite) {
 			console.log(chalk.yellow("Aborted."));
 			return;
@@ -103,21 +120,13 @@ export const initCommand = async (): Promise<void> => {
 
 	// Check if login is needed
 	if (!hasAuthState(cwd)) {
-		const { needsLogin } = await inquirer.prompt<{ needsLogin: boolean }>({
-			type: "confirm",
-			name: "needsLogin",
-			message: "Does this app require login?",
-			default: true,
-		});
+		const needsLogin = await askYesNo("Does this app require login?", true);
 
 		if (needsLogin) {
-			const { ciAuto } = await inquirer.prompt<{ ciAuto: boolean }>({
-				type: "confirm",
-				name: "ciAuto",
-				message:
-					"Generate a login.js skeleton for headless / CI auto-login? (recommended)",
-				default: true,
-			});
+			const ciAuto = await askYesNo(
+				"Create .kagemusha/login.mjs for automated login? (recommended — required for CI; edit selectors/credentials after generation)",
+				true,
+			);
 
 			if (ciAuto) {
 				const skeletonPath = path.join(cwd, ".kagemusha", "login.mjs");
@@ -175,13 +184,7 @@ export const initCommand = async (): Promise<void> => {
 			});
 			selectedPaths.push(manualPath);
 
-			const { more } = await inquirer.prompt<{ more: boolean }>({
-				type: "confirm",
-				name: "more",
-				message: "Add another page?",
-				default: false,
-			});
-			addMore = more;
+			addMore = await askYesNo("Add another page?", false);
 		}
 	}
 
@@ -191,12 +194,10 @@ export const initCommand = async (): Promise<void> => {
 	let resetExisting = false;
 
 	if (existing.length > 0) {
-		const { keepExisting } = await inquirer.prompt<{ keepExisting: boolean }>({
-			type: "confirm",
-			name: "keepExisting",
-			message: `${existing.length} existing definition(s) found. Keep them and merge new selections?`,
-			default: true,
-		});
+		const keepExisting = await askYesNo(
+			`${existing.length} existing definition(s) found. Keep them and merge new selections?`,
+			true,
+		);
 		if (!keepExisting) {
 			console.log(
 				chalk.yellow(
@@ -236,13 +237,9 @@ export const initCommand = async (): Promise<void> => {
 	console.log("");
 
 	// Step 3: GitHub Actions workflow
-	const { createWorkflow } = await inquirer.prompt<{ createWorkflow: boolean }>(
-		{
-			type: "confirm",
-			name: "createWorkflow",
-			message: "Generate GitHub Actions workflow?",
-			default: true,
-		},
+	const createWorkflow = await askYesNo(
+		"Generate GitHub Actions workflow?",
+		true,
 	);
 
 	if (createWorkflow) {
