@@ -107,7 +107,7 @@ Wait for a known page-specific element (page title, chart canvas, first table ro
 If your app needs login, `init` generates a `.kagemusha/login.mjs` skeleton:
 
 ```js
-/** @param {import('playwright-chromium').Page} page */
+/** @param {import('playwright-core').Page} page */
 export const login = async (page) => {
   await page.goto("/login");
   // Pick env names that fit your project (NOT EMAIL/PASSWORD, NOT KAGEMUSHA_*).
