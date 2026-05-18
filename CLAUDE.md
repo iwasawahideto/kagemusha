@@ -11,6 +11,33 @@
   const foo = (x: number): string => { ... };
   ```
 
+## コミット規約 (Conventional Commits)
+
+リリースは [release-please](https://github.com/googleapis/release-please) で自動化されている。release-please は main の commit message を解析して次の release を決めるので、**PR title を Conventional Commits 形式で書く** (= squash merge で PR title が main の commit になる)。
+
+### 許可される prefix と release-please の挙動
+
+| Prefix | bump | 用途 |
+|---|---|---|
+| `feat:` | minor (= 0.X.0 → 0.X+1.0) | 新機能 |
+| `fix:` | patch (= 0.X.Y → 0.X.Y+1) | バグ修正 |
+| `feat!:` / `fix!:` / 本文に `BREAKING CHANGE:` | major (= 1.0+ 移行後) | 破壊的変更 |
+| `chore:` / `docs:` / `style:` / `refactor:` / `perf:` / `test:` / `build:` / `ci:` / `revert:` | なし | リファクタ・ドキュメント・CI など |
+
+scope は optional (例: `feat(editor): ...`)。kagemusha の主な scope:
+
+- `editor` — `src/editor/inject-script/` 関連
+- `capture` — `src/lib/screenshot.ts` / `src/commands/capture.ts`
+- `config` / `init` — config 周り
+- `ci` — `.github/workflows/`
+- `docs` — README / CLAUDE.md
+
+### 注意
+
+- **過去の emoji prefix commit** (= `✨` / `🐛` / `♻️`) は release-please に認識されない。今後は必ず Conventional Commits を使う
+- **0.x 期間中**は `feat:` (minor) に breaking change を含めても許容される (= semver 仕様)。1.0 以降は厳格に `feat!:` / `fix!:` で示す
+- merge 前のチェックは [safe-squash-merge skill](.claude/skills/safe-squash-merge/SKILL.md) を `/safe-squash-merge <PR番号>` で起動すると自動化される
+
 ## 公開 API
 
 以下は **公開 API**。ユーザーが直接依存するので、変更時は意識的に。
