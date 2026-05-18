@@ -1,4 +1,4 @@
-type Page = import("playwright-chromium").Page;
+type Page = import("playwright-core").Page;
 
 /**
  * After `page.goto({ waitUntil: "load" })`, wait for the SPA to settle before

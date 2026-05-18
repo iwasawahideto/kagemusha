@@ -351,7 +351,7 @@ const generateLoginSkeleton = (): string =>
 //   - Generic names like EMAIL / PASSWORD (collide with shell rc / other tools)
 //   - KAGEMUSHA_* prefix (reserved for kagemusha's own future config / GUI auth)
 
-/** @param {import('playwright-chromium').Page} page */
+/** @param {import('playwright-core').Page} page */
 export const login = async (page) => {
 	await page.goto("/login");
 
