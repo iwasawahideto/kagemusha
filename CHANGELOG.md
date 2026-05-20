@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.7](https://github.com/iwasawahideto/kagemusha/compare/v0.3.6...v0.3.7) (2026-05-20)
+
+
+### Bug Fixes
+
+* install Japanese fonts and color emoji in generated workflow template ([#32](https://github.com/iwasawahideto/kagemusha/issues/32)) ([b223368](https://github.com/iwasawahideto/kagemusha/commit/b22336820c907fb6727c4555a374786aab3ed2cf))
+
 ## [0.3.6](https://github.com/iwasawahideto/kagemusha/compare/v0.3.5...v0.3.6) (2026-05-18)
 
 
