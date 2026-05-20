@@ -387,6 +387,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # GH-hosted ubuntu runner には CJK / emoji font が pre-installed じゃない
+      # ので、日本語 / 中国語 / 韓国語 / emoji を含む UI を撮ると tofu (= □) に
+      # なる。Noto CJK + Noto Color Emoji を入れて Chrome に正しい glyph を渡す。
+      - name: Install Japanese fonts and color emoji
+        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk fonts-noto-color-emoji
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
