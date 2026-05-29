@@ -12,16 +12,22 @@ export interface Dimensions {
  * `capture` actually pushed (= default mode, S3 destination). `--dry-run` and
  * `local` destination leave this undefined.
  *
- * - `after`: the new `latest.png` URL
- * - `before`: the previous `latest.png` URL (= `previous.png`). Undefined on
- *   the first push for this id (no prior version existed).
+ * Both URLs point under `history/<timestamp>.png` — **immutable per-run
+ * URLs**. Image proxies (Slack, Intercom) cache by URL, so the URL must
+ * identify a stable image for the embed to behave well across releases.
+ *
+ * - `history`: this run's screenshot
+ * - `previousHistory`: prior run's screenshot. Undefined on first push for
+ *   this id (no prior run existed) and on the v1→v2 migration push (prior
+ *   latest.png carries no timestamp metadata)
  *
  * No `diff` URL — kagemusha intentionally does not publish a pre-generated
- * diff visualization. Consumers compare before vs after raw images instead.
+ * diff visualization. Consumers compare history vs previousHistory raw
+ * images instead.
  */
 export interface ResultUrls {
-	after: string;
-	before?: string;
+	history: string;
+	previousHistory?: string;
 }
 
 export type DiffStatus =

@@ -4,14 +4,10 @@ import path from "node:path";
 import chalk from "chalk";
 import { hasAuthState, resolveLoginScriptPath } from "../lib/auth.js";
 import { handleAwsError } from "../lib/aws-error.js";
-import {
-	createS3Canonical,
-	getCanonicalPath,
-	getOutputDir,
-	type PushUrls,
-} from "../lib/canonical.js";
 import { findProjectRoot, loadConfig, loadDefinitions } from "../lib/config.js";
 import { type DiffStatus, diffImages } from "../lib/diff.js";
+import { getCanonicalPath, getOutputDir } from "../lib/output-dir.js";
+import { createS3Canonical, type PushUrls } from "../lib/s3-canonical.js";
 import { captureScreenshots } from "../lib/screenshot.js";
 import {
 	cleanupStaging,
@@ -27,8 +23,10 @@ interface CaptureOptions {
 	threshold?: string;
 }
 
-// Schema version of `reports/summary.json`. Bump on any breaking change.
-const SUMMARY_SCHEMA_VERSION = "1";
+// Schema version of `reports/summary.json` (public API). Bump on breaking
+// changes. v2: replaced `urls.before`/`urls.after` (mutable) with
+// `urls.history`/`urls.previousHistory` (immutable). See README.
+const SUMMARY_SCHEMA_VERSION = "2";
 
 interface SummaryReport {
 	schemaVersion: string;

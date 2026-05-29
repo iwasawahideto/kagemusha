@@ -1,3 +1,4 @@
+import { NoSuchKey, NotFound } from "@aws-sdk/client-s3";
 import chalk from "chalk";
 
 const errorName = (e: unknown): string =>
@@ -12,6 +13,29 @@ const errorMessage = (e: unknown): string =>
 	typeof e === "object" && e !== null
 		? ((e as { message?: string }).message ?? "")
 		: "";
+const errorStatusCode = (e: unknown): number | undefined =>
+	typeof e === "object" && e !== null
+		? (e as { $metadata?: { httpStatusCode?: number } }).$metadata
+				?.httpStatusCode
+		: undefined;
+
+// GetObject throws NoSuchKey for absent keys.
+export const isNoSuchKey = (e: unknown): boolean => {
+	if (e instanceof NoSuchKey) return true;
+	const name = errorName(e);
+	const code = errorCode(e);
+	return name === "NoSuchKey" || code === "NoSuchKey";
+};
+
+// HeadObject throws NotFound (not NoSuchKey). SDK surfaces it as a typed
+// instance, a name/code string, or a 404 — match all three.
+export const isNotFound = (e: unknown): boolean => {
+	if (e instanceof NotFound) return true;
+	const name = errorName(e);
+	const code = errorCode(e);
+	if (name === "NotFound" || code === "NotFound") return true;
+	return errorStatusCode(e) === 404;
+};
 
 const matchesAuthError = (e: unknown): boolean => {
 	const name = errorName(e);

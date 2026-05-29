@@ -51,11 +51,14 @@ CI の jq クエリ等で parse される。
   - **field 削除 / rename / 型変更**: `"1"` → `"2"` に bump (= breaking)
 - README「Notifications > Public API: `reports/summary.json`」セクションも同期更新
 
-現行 fields (= schemaVersion 1):
+現行 fields (= schemaVersion 2):
 - top level: `schemaVersion`, `timestamp`, `dryRun`, `canonical`, `counts`, `results`
 - `results[]`: `id`, `status` ("unchanged" | "new" | "missing" | "changed")
 - `results[].status === "changed"`: `reason` ("pixel-diff" | "layout-diff"), 各 reason 固有 fields
-- `results[].urls?`: `{ after, before?, diff? }` — S3 destination + 実 push 時のみ存在
+- `results[].urls?`: `{ history, previousHistory? }` — S3 destination + 実 push 時のみ存在
+  - `history` = immutable な今回 run の URL（通知/埋め込み用、`history/<timestamp>.png`）
+  - `previousHistory` = immutable な前回 run の URL（初回 push or v1→v2 migration 時は undefined）
+  - `latest.png` は kagemusha 内部の diff baseline 用に S3 に存在するが、**public API には出さない**（mutable URL を埋め込んでほしくないため）
 
 ### 2. `.kagemusha/login.mjs` の引数 shape
 
