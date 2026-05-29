@@ -12,18 +12,14 @@ import {
 import { mockClient } from "aws-sdk-client-mock";
 import { S3Canonical } from "./s3-canonical.js";
 
-// aws-sdk-client-mock intercepts every S3Client instance created in this
-// process. canonical.ts constructs its own client internally, so we mock
-// the class itself rather than passing a client in.
+// Class-level mock: S3Canonical news up its own S3Client internally.
 const s3Mock = mockClient(S3Client);
 
 const BUCKET = "test-bucket";
 const CDN_BASE = "https://cdn.example.com";
 const ID = "home";
 
-// Minimal PNG-ish bytes — content doesn't matter for these tests since we
-// only assert that S3 received *some* body. Using a real PNG header keeps
-// the fixture self-documenting.
+// PNG header bytes — body content doesn't matter, just needs to be readable.
 const PNG_HEADER = Buffer.from([
 	0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
 ]);
@@ -42,9 +38,8 @@ afterEach(() => {
 	fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
-// readLatestTimestamp is `private` in TS but the test is the contract for
-// the metadata round-trip, so cast through `any` to reach it. Using
-// `unknown` then narrowing keeps the cast localized.
+// readLatestTimestamp is `private` but its round-trip with `push` is
+// what these tests pin down — cast once, locally.
 const readLatestTimestamp = (
 	c: S3Canonical,
 	id: string,
