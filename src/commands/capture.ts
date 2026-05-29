@@ -4,14 +4,10 @@ import path from "node:path";
 import chalk from "chalk";
 import { hasAuthState, resolveLoginScriptPath } from "../lib/auth.js";
 import { handleAwsError } from "../lib/aws-error.js";
-import {
-	createS3Canonical,
-	getCanonicalPath,
-	getOutputDir,
-	type PushUrls,
-} from "../lib/canonical.js";
 import { findProjectRoot, loadConfig, loadDefinitions } from "../lib/config.js";
 import { type DiffStatus, diffImages } from "../lib/diff.js";
+import { getCanonicalPath, getOutputDir } from "../lib/output-dir.js";
+import { createS3Canonical, type PushUrls } from "../lib/s3-canonical.js";
 import { captureScreenshots } from "../lib/screenshot.js";
 import {
 	cleanupStaging,

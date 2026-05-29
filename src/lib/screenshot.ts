@@ -7,7 +7,7 @@ import type {
 } from "../types.js";
 import { drawAnnotations } from "./annotate.js";
 import { defaultContextOptions } from "./auth.js";
-import { getOutputDir } from "./canonical.js";
+import { getOutputDir } from "./output-dir.js";
 import { waitForPageReady } from "./page-ready.js";
 import { launchOptionsFor } from "./playwright-launch.js";
 

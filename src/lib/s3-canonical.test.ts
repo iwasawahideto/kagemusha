@@ -10,7 +10,7 @@ import {
 	S3ServiceException,
 } from "@aws-sdk/client-s3";
 import { mockClient } from "aws-sdk-client-mock";
-import { S3Canonical } from "./canonical.js";
+import { S3Canonical } from "./s3-canonical.js";
 
 // aws-sdk-client-mock intercepts every S3Client instance created in this
 // process. canonical.ts constructs its own client internally, so we mock

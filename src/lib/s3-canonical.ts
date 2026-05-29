@@ -3,30 +3,11 @@ import path from "node:path";
 import {
 	GetObjectCommand,
 	HeadObjectCommand,
-	NoSuchKey,
-	NotFound,
 	PutObjectCommand,
 	S3Client,
 } from "@aws-sdk/client-s3";
 import type { KagemushaConfig } from "../types.js";
-
-const DEFAULT_OUTPUT_DIR = "screenshots";
-
-export const getOutputDir = (
-	config: KagemushaConfig,
-	projectRoot: string,
-): string => {
-	const configured = config.publish?.outputDir ?? DEFAULT_OUTPUT_DIR;
-	return path.isAbsolute(configured)
-		? configured
-		: path.join(projectRoot, configured);
-};
-
-export const getCanonicalPath = (
-	config: KagemushaConfig,
-	projectRoot: string,
-	id: string,
-): string => path.join(getOutputDir(config, projectRoot), `${id}.png`);
+import { isNoSuchKey, isNotFound } from "./aws-error.js";
 
 export type FetchResult = "ok" | "not-found";
 
@@ -208,25 +189,6 @@ export class S3Canonical {
 		return this.cdnBaseUrl ?? `s3://${this.bucket}`;
 	}
 }
-
-const isNoSuchKey = (e: unknown): boolean => {
-	if (e instanceof NoSuchKey) return true;
-	const name = (e as { name?: string })?.name;
-	const code = (e as { Code?: string })?.Code;
-	return name === "NoSuchKey" || code === "NoSuchKey";
-};
-
-// HeadObject returns NotFound (not NoSuchKey) for absent keys. The AWS SDK
-// surfaces this as either a typed `NotFound` instance or an error with
-// `name`/`Code` of "NotFound" — match both.
-const isNotFound = (e: unknown): boolean => {
-	if (e instanceof NotFound) return true;
-	const name = (e as { name?: string })?.name;
-	const code = (e as { Code?: string })?.Code;
-	const statusCode = (e as { $metadata?: { httpStatusCode?: number } })
-		?.$metadata?.httpStatusCode;
-	return name === "NotFound" || code === "NotFound" || statusCode === 404;
-};
 
 export const createS3Canonical = (
 	config: KagemushaConfig,
