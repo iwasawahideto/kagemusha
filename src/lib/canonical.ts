@@ -1,9 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import {
-	CopyObjectCommand,
 	GetObjectCommand,
+	HeadObjectCommand,
 	NoSuchKey,
+	NotFound,
 	PutObjectCommand,
 	S3Client,
 } from "@aws-sdk/client-s3";
@@ -33,13 +34,20 @@ export type FetchResult = "ok" | "not-found";
  * URLs returned by `push()` so callers can include them in summary.json
  * for downstream notification consumers (Slack, PR comments, etc.).
  *
- * - `after`: the new `latest.png` we just uploaded
- * - `before`: the previous `latest.png`, copied to `previous.png` before
- *   being overwritten. Undefined when no prior version existed (= first push)
+ * Both URLs point under `<id>/history/<timestamp>.png` — **immutable
+ * per-run URLs**. Notification embeds (Slack/Intercom/etc.) cache by URL,
+ * so the URL must identify a stable image for the embed to behave well
+ * across releases. The mutable `latest.png` is kept internally as the
+ * diff baseline pointer but is intentionally not exposed in this API.
+ *
+ * - `history`: this run's screenshot
+ * - `previousHistory`: prior run's screenshot. Undefined on first push
+ *   for an id (no prior) and on the v1→v2 migration push (prior latest
+ *   carries no timestamp metadata, see `readLatestTimestamp`)
  */
 export interface PushUrls {
-	after: string;
-	before?: string;
+	history: string;
+	previousHistory?: string;
 }
 
 // Extract AWS region from a virtual-hosted–style S3 URL or s3.<region>.amazonaws.com endpoint.
@@ -70,14 +78,10 @@ export class S3Canonical {
 		return `${id}/latest.png`;
 	}
 
-	private previousKey(id: string): string {
-		return `${id}/previous.png`;
-	}
-
 	private historyKey(id: string, timestamp: string): string {
 		// Group history snapshots under a sub-prefix so the bucket list
-		// shows `latest.png` / `previous.png` cleanly without historical
-		// snapshots interleaved alphabetically.
+		// shows `latest.png` cleanly without historical snapshots
+		// interleaved alphabetically.
 		return `${id}/history/${timestamp}.png`;
 	}
 
@@ -107,49 +111,48 @@ export class S3Canonical {
 	 * Upload `localPath` as the canonical for `id`.
 	 *
 	 * Side effects on S3 for a single push:
-	 *   1. Copy existing latest.png → previous.png (no-op if missing)
-	 *   2. Upload localPath → latest.png
+	 *   1. HEAD latest.png to read the prior run's timestamp (from object
+	 *      metadata). Used to build `previousHistory` — the immutable URL
+	 *      to the screenshot from the run before this one
+	 *   2. Upload localPath → latest.png (with timestamp metadata)
 	 *   3. Upload localPath → history/<timestamp>.png
 	 *
-	 * Step 1 must complete first (otherwise the soon-to-be-overwritten latest
-	 * would be replaced before the snapshot is taken). Steps 2-3 target
-	 * different keys and run in parallel.
+	 * Steps 2-3 target different keys and run in parallel. Step 1 only
+	 * reads, so it's also parallel-safe — but kept serial because we need
+	 * the prior timestamp before constructing the return value.
 	 *
-	 * Returns URLs (`before` / `after`) so callers can surface them in
-	 * `reports/summary.json` (= public API). Consumers compare before vs after
-	 * visually; kagemusha intentionally does not publish a pre-generated diff
-	 * image (= pixelmatch's red overlay is alarming and adds little vs the
-	 * raw pair).
+	 * Returns immutable per-run URLs (`history` / `previousHistory`) so
+	 * callers can surface them in `reports/summary.json`. `latest.png` is
+	 * written but intentionally not returned — see `PushUrls` doc for why
+	 * mutable URLs are kept out of the public API.
+	 *
+	 * Concurrency: assumes only one push() per `id` runs at a time. The
+	 * generated workflow guarantees this via `concurrency: { group:
+	 * kagemusha, cancel-in-progress: true }`. Removing that opens a race
+	 * where two pushes read the same prior timestamp and lose history
+	 * links.
 	 */
 	async push(id: string, localPath: string): Promise<PushUrls> {
 		const body = fs.readFileSync(localPath);
+		const timestamp = new Date().toISOString().replaceAll(":", "-");
 
-		// 1. Snapshot the soon-to-be-overwritten latest as `previous`.
-		// Uses CopyObject (= S3-side copy, no local round-trip). First push for
-		// this id has no latest yet — we swallow NoSuchKey and report `before:
-		// undefined` to the caller.
-		let beforeUrl: string | undefined;
-		try {
-			await this.client.send(
-				new CopyObjectCommand({
-					Bucket: this.bucket,
-					CopySource: `${this.bucket}/${this.latestKey(id)}`,
-					Key: this.previousKey(id),
-					MetadataDirective: "REPLACE",
-					ContentType: "image/png",
-					CacheControl: "no-cache",
-				}),
-			);
-			beforeUrl = this.urlFor(this.previousKey(id));
-		} catch (e) {
-			if (!isNoSuchKey(e)) throw e;
-			// first push for this id — no previous yet, leave beforeUrl undefined
-		}
+		// 1. Read prior run's timestamp from latest's object metadata to
+		// construct an immutable URL to the screenshot from the previous run.
+		// Missing latest (= first push for this id) or missing metadata (=
+		// latest was written by a pre-v2 kagemusha) both leave previousHistory
+		// undefined.
+		const previousTimestamp = await this.readLatestTimestamp(id);
+		const previousHistory = previousTimestamp
+			? this.urlFor(this.historyKey(id, previousTimestamp))
+			: undefined;
 
 		// 2-3. Independent uploads — run in parallel (= ~2x faster than serial).
-		const timestamp = new Date().toISOString().replaceAll(":", "-");
 		await Promise.all([
-			// 2. latest
+			// 2. latest — kagemusha-internal stable pointer. Used by `fetch()`
+			// as the diff baseline (one GET per id, no list needed), and its
+			// `timestamp` metadata is read on the next push to construct
+			// `previousHistory`. NOT exposed in the public summary.json — see
+			// PushUrls doc.
 			this.client.send(
 				new PutObjectCommand({
 					Bucket: this.bucket,
@@ -157,23 +160,48 @@ export class S3Canonical {
 					Body: body,
 					ContentType: "image/png",
 					CacheControl: "no-cache",
+					Metadata: { timestamp },
 				}),
 			),
-			// 3. history snapshot
+			// 3. history snapshot — immutable per-run URL for embeds/archival.
+			// `immutable` advertises to image proxies (Slack, Intercom) and
+			// CDNs that this URL's bytes will never change, so they can cache
+			// freely and skip revalidation. 1-year max-age + immutable is the
+			// canonical "permanent" Cache-Control recipe.
 			this.client.send(
 				new PutObjectCommand({
 					Bucket: this.bucket,
 					Key: this.historyKey(id, timestamp),
 					Body: body,
 					ContentType: "image/png",
+					CacheControl: "public, max-age=31536000, immutable",
 				}),
 			),
 		]);
 
 		return {
-			after: this.urlFor(this.latestKey(id)),
-			before: beforeUrl,
+			history: this.urlFor(this.historyKey(id, timestamp)),
+			previousHistory,
 		};
+	}
+
+	/**
+	 * Read the `timestamp` metadata from latest.png. Returns undefined when
+	 * latest is absent (first push) or has no metadata (pre-v2 kagemusha).
+	 */
+	private async readLatestTimestamp(id: string): Promise<string | undefined> {
+		try {
+			const res = await this.client.send(
+				new HeadObjectCommand({
+					Bucket: this.bucket,
+					Key: this.latestKey(id),
+				}),
+			);
+			return res.Metadata?.timestamp;
+		} catch (e) {
+			if (isNotFound(e)) return undefined;
+			throw e;
+		}
 	}
 
 	label(): string {
@@ -186,6 +214,18 @@ const isNoSuchKey = (e: unknown): boolean => {
 	const name = (e as { name?: string })?.name;
 	const code = (e as { Code?: string })?.Code;
 	return name === "NoSuchKey" || code === "NoSuchKey";
+};
+
+// HeadObject returns NotFound (not NoSuchKey) for absent keys. The AWS SDK
+// surfaces this as either a typed `NotFound` instance or an error with
+// `name`/`Code` of "NotFound" — match both.
+const isNotFound = (e: unknown): boolean => {
+	if (e instanceof NotFound) return true;
+	const name = (e as { name?: string })?.name;
+	const code = (e as { Code?: string })?.Code;
+	const statusCode = (e as { $metadata?: { httpStatusCode?: number } })
+		?.$metadata?.httpStatusCode;
+	return name === "NotFound" || code === "NotFound" || statusCode === 404;
 };
 
 export const createS3Canonical = (

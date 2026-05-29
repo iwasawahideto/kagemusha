@@ -28,7 +28,15 @@ interface CaptureOptions {
 }
 
 // Schema version of `reports/summary.json`. Bump on any breaking change.
-const SUMMARY_SCHEMA_VERSION = "1";
+// v2: removed both mutable URLs (`urls.before` = `previous.png`, `urls.after`
+// = `latest.png`) to evict mutable URLs from the public API — they caused
+// image proxies (Slack, Intercom) to either freeze on the cached preview or
+// silently mutate under prior messages on the next push. Replaced with two
+// immutable per-run URLs: `urls.history` (this run) and `urls.previousHistory`
+// (prior run, optional). `previous.png` is no longer uploaded; `latest.png`
+// remains as a kagemusha-internal diff baseline pointer but is not exposed.
+// See README "Public API" section.
+const SUMMARY_SCHEMA_VERSION = "2";
 
 interface SummaryReport {
 	schemaVersion: string;
