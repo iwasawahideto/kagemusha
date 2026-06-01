@@ -136,9 +136,9 @@ The workflow triggers on `push: main` and runs `kagemusha capture` automatically
 
 ## Notifications
 
-`kagemusha capture` writes `reports/summary.json` with the source page URL and (for S3 destination, when a real push happened) the image URLs:
+`kagemusha capture` writes `reports/summary.json` — public API for downstream notifiers (Slack, PR comments, custom dashboards):
 
-```json
+```jsonc
 {
   "schemaVersion": "2",
   "timestamp": "2026-05-15T12:34:56.789Z",
@@ -149,43 +149,31 @@ The workflow triggers on `push: main` and runs `kagemusha capture` automatically
     {
       "id": "engagements-overview",
       "pageUrl": "https://app.example.com/engagements/overview",
-      "status": "changed",
-      "reason": "pixel-diff",
+      "status": "changed",       // "unchanged" | "new" | "missing" | "changed"
+      "reason": "pixel-diff",    // only when status === "changed"
       "diffPercentage": 2.34,
-      "urls": {
+      "urls": {                  // only on S3 destination + real push
         "latest": "https://.../engagements-overview/latest.png",
-        "history": "https://.../engagements-overview/history/2026-05-15T12-34-56.789Z.png",
-        "previousHistory": "https://.../engagements-overview/history/2026-05-08T09-12-03.456Z.png"
+        "history": "https://.../engagements-overview/history/2026-05-15T...Z.png",
+        "previousHistory": "https://.../engagements-overview/history/2026-05-08T...Z.png"
       }
-    },
-    {
-      "id": "new-page",
-      "pageUrl": "https://app.example.com/new",
-      "status": "new",
-      "urls": {
-        "latest": "https://.../new-page/latest.png",
-        "history": "https://.../new-page/history/2026-05-15T12-34-56.789Z.png"
-      }
-    },
-    { "id": "dashboard", "pageUrl": "https://app.example.com/dashboard", "status": "unchanged" }
+    }
   ]
 }
 ```
 
-### About the URLs
+### How to embed each URL
 
-`pageUrl` is the source page (`baseUrl` + the definition's `url`, with `urlParams` resolved). Always present.
+| field                  | mutability   | how to embed                                    |
+|------------------------|--------------|-------------------------------------------------|
+| `pageUrl`              | external     | labeled link (e.g. Slack `<url|label>`)         |
+| `urls.history`         | immutable    | bare URL — gets unfurled into image preview     |
+| `urls.previousHistory` | immutable    | bare URL — same as above                        |
+| `urls.latest`          | mutable      | **labeled link only** — bare URL hits proxy cache and silently mutates prior messages on the next push |
 
-The `urls` object holds image URLs on S3 and is only populated when a real push happened (= S3 destination, not `--dry-run`):
+`previousHistory` is undefined on first push for an id, and on the v1→v2 migration push (prior `latest.png` lacks timestamp metadata).
 
-- **`urls.history` / `urls.previousHistory`** are **immutable per-run URLs** under `<id>/history/<timestamp>.png`. Embed them as bare URLs anywhere they'll be viewed later (Slack/Intercom previews, help-article embeds, PR comments). Image proxies cache by URL, so the URL must identify a stable image — that's what these guarantee. History objects ship with `Cache-Control: public, max-age=31536000, immutable`
-- **`urls.latest`** is a **mutable** URL pointing at `<id>/latest.png` (always-current canonical). Use it ONLY as a labeled link (Slack `<url|label>`, HTML `<a href>`, etc.), never as a bare URL in notification text — bare URLs get unfurled by image proxies, which would either freeze the preview on the cached bytes or silently mutate prior messages on the next release. The labeled-link form skips unfurl and sidesteps the cache entirely
-
-`previousHistory` is undefined on the first push for an id (no prior run exists). It's also undefined on the v1→v2 migration push for an id that already had v1 history (the prior `latest.png` carries no timestamp metadata) — the next push reverts to normal.
-
-The schema is **part of kagemusha's public API** — additive changes stay on the current `schemaVersion`, removals/renames bump it. kagemusha intentionally does not publish a pre-rendered diff image; consumers compare history vs previousHistory raw images (= Slack auto-unfurls both side by side).
-
-> **Migration from v1 → v2**: `urls.before` and `urls.after` were removed (they pointed at mutable URLs with proxy-cache pitfalls). Use `urls.previousHistory` / `urls.history` instead, and **update `.kagemusha/notify-slack.jq`** from [`templates/notify-slack.jq`](templates/notify-slack.jq) — otherwise Slack messages will lose image previews. Existing `<id>/previous.png` objects in your bucket are no longer maintained and can be safely deleted.
+The schema is **part of kagemusha's public API** — additive changes keep the current `schemaVersion`, removals/renames bump it. No pre-rendered diff image; consumers compare history vs previousHistory raw images side by side.
 
 Slack notification (the generated workflow includes this; just set `SLACK_WEBHOOK_URL`):
 

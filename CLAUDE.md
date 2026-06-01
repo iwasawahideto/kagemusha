@@ -47,19 +47,10 @@ scope は optional (例: `feat(editor): ...`)。kagemusha の主な scope:
 CI の jq クエリ等で parse される。
 
 - **`SUMMARY_SCHEMA_VERSION`** (= `src/commands/capture.ts`) を bump する
-  - **field 追加のみ**: そのまま (`"1"` 維持) — 既存クエリは壊れない
-  - **field 削除 / rename / 型変更**: `"1"` → `"2"` に bump (= breaking)
-- README「Notifications > Public API: `reports/summary.json`」セクションも同期更新
-
-現行 fields (= schemaVersion 2):
-- top level: `schemaVersion`, `timestamp`, `dryRun`, `canonical`, `counts`, `results`
-- `results[]`: `id`, `pageUrl`, `status` ("unchanged" | "new" | "missing" | "changed")
-  - `pageUrl` = 撮影対象ページの絶対 URL（`baseUrl + def.url`, `urlParams` 解決済み）。常に存在
-- `results[].status === "changed"`: `reason` ("pixel-diff" | "layout-diff"), 各 reason 固有 fields
-- `results[].urls?`: `{ latest, history, previousHistory? }` — S3 destination + 実 push 時のみ存在
-  - `history` = immutable な今回 run の URL（bare URL で埋め込み = 画像プレビュー）
-  - `previousHistory` = immutable な前回 run の URL（初回 push or v1→v2 migration 時は undefined）
-  - `latest` = mutable な `latest.png` URL。**labeled link （`<url|label>` 形式）でだけ使う**（bare URL で出すと image proxy がキャッシュしてしまい、PR #34 で直したキャッシュ問題が再発）
+  - **field 追加のみ**: そのまま維持 — 既存クエリは壊れない
+  - **field 削除 / rename / 型変更**: bump (= breaking)
+- 現行 schema の field 一覧は `src/lib/diff.ts` の `DiffStatus` 型 と README "Notifications" を参照（CLAUDE.md には載せない・3 重管理しない）
+- schema を変えたら README「Notifications」も同期更新する
 
 ### 2. `.kagemusha/login.mjs` の引数 shape
 
@@ -77,8 +68,8 @@ CI の jq クエリ等で parse される。
 
 ### 4. CLI フラグ
 
-- `--dry-run` / `--ids` / `--threshold` / `--open` / `--headed` 等
 - 追加は OK、rename / 削除は breaking
+- flag の一覧は `src/index.ts` のコマンド定義を参照
 
 ---
 
