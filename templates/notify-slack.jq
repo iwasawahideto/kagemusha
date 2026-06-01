@@ -11,11 +11,12 @@
 | select(.status == "changed" or .status == "new")
 | {
     text: (
-      "📸 *<\(.pageUrl)|\(.id)>* " +
+      "📸 *\(.id)* " +
       (if .status == "changed" then "changed" else "added" end) +
       (if .diffPercentage then " (\((.diffPercentage * 100 | floor) / 100)%)"
        elif .reason == "layout-diff" then " (layout)"
        else "" end) +
+      "\n<\(.pageUrl)|\(.pageUrl)>" +
       (if .urls.latest then "\nLatest: <\(.urls.latest)|current canonical>" else "" end) +
       (if .urls.previousHistory then "\nBefore: \(.urls.previousHistory)" else "" end) +
       (if .urls.history then "\nAfter:  \(.urls.history)" else "" end)
