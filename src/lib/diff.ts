@@ -63,10 +63,8 @@ export interface DiffOptions {
 
 // `diffPercentage` is in % (e.g. 2.34), `threshold` is in fraction
 // (e.g. 0.005). Strict `>` so a diff exactly at threshold = unchanged.
-export const isOverThreshold = (
-	diffPercentage: number,
-	threshold: number,
-): boolean => diffPercentage / 100 > threshold;
+const isOverThreshold = (diffPercentage: number, threshold: number): boolean =>
+	diffPercentage / 100 > threshold;
 
 export type DiffResult =
 	| { match: true }
@@ -82,6 +80,34 @@ export type DiffResult =
 			diffCount: number;
 			diffPercentage: number;
 	  };
+
+// Verdict of "what should this diff do to the result entry?" — pure,
+// no side effects. `capture.ts` switches on `kind` to produce the
+// matching DiffStatus. Extracted so the classification policy
+// (including the sub-threshold suppression) is unit-testable without
+// having to mock `diffImages` / S3 / fs.
+export type Classification =
+	| { kind: "unchanged" }
+	| { kind: "layout-changed"; canonical: Dimensions; staging: Dimensions }
+	| { kind: "pixel-changed"; diffPercentage: number };
+
+export const classify = (
+	result: DiffResult,
+	threshold: number,
+): Classification => {
+	if (result.match) return { kind: "unchanged" };
+	if (result.reason === "layout-diff") {
+		return {
+			kind: "layout-changed",
+			canonical: result.canonical,
+			staging: result.staging,
+		};
+	}
+	if (!isOverThreshold(result.diffPercentage, threshold)) {
+		return { kind: "unchanged" };
+	}
+	return { kind: "pixel-changed", diffPercentage: result.diffPercentage };
+};
 
 const readPng = (filePath: string): PNG =>
 	PNG.sync.read(fs.readFileSync(filePath));

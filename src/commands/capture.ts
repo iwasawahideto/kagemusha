@@ -5,7 +5,7 @@ import chalk from "chalk";
 import { hasAuthState, resolveLoginScriptPath } from "../lib/auth.js";
 import { handleAwsError } from "../lib/aws-error.js";
 import { findProjectRoot, loadConfig, loadDefinitions } from "../lib/config.js";
-import { type DiffStatus, diffImages, isOverThreshold } from "../lib/diff.js";
+import { classify, type DiffStatus, diffImages } from "../lib/diff.js";
 import { getCanonicalPath, getOutputDir } from "../lib/output-dir.js";
 import { createS3Canonical, type PushUrls } from "../lib/s3-canonical.js";
 import { captureScreenshots, resolveUrl } from "../lib/screenshot.js";
@@ -217,20 +217,23 @@ const runCapture = async (options: CaptureOptions): Promise<void> => {
 			continue;
 		}
 
-		const result = await diffImages(canonicalPath, stagingPath);
+		const verdict = classify(
+			await diffImages(canonicalPath, stagingPath),
+			threshold,
+		);
 
-		if (result.match) {
+		if (verdict.kind === "unchanged") {
 			results.push({ id: def.id, pageUrl, status: "unchanged" });
 			fs.rmSync(stagingPath, { force: true });
 			finalPathFor.set(def.id, canonicalPath);
-		} else if (result.reason === "layout-diff") {
+		} else if (verdict.kind === "layout-changed") {
 			const item: DiffStatus = {
 				id: def.id,
 				pageUrl,
 				status: "changed",
 				reason: "layout-diff",
-				canonical: result.canonical,
-				staging: result.staging,
+				canonical: verdict.canonical,
+				staging: verdict.staging,
 			};
 			results.push(item);
 			queuePush({
@@ -241,18 +244,13 @@ const runCapture = async (options: CaptureOptions): Promise<void> => {
 					if (urls) item.urls = urls;
 				},
 			});
-		} else if (!isOverThreshold(result.diffPercentage, threshold)) {
-			// sub-threshold pixel-diff → treat as unchanged
-			results.push({ id: def.id, pageUrl, status: "unchanged" });
-			fs.rmSync(stagingPath, { force: true });
-			finalPathFor.set(def.id, canonicalPath);
 		} else {
 			const item: DiffStatus = {
 				id: def.id,
 				pageUrl,
 				status: "changed",
 				reason: "pixel-diff",
-				diffPercentage: result.diffPercentage,
+				diffPercentage: verdict.diffPercentage,
 			};
 			results.push(item);
 			queuePush({
