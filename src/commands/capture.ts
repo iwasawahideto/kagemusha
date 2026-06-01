@@ -5,7 +5,7 @@ import chalk from "chalk";
 import { hasAuthState, resolveLoginScriptPath } from "../lib/auth.js";
 import { handleAwsError } from "../lib/aws-error.js";
 import { findProjectRoot, loadConfig, loadDefinitions } from "../lib/config.js";
-import { type DiffStatus, diffImages } from "../lib/diff.js";
+import { classify, type DiffStatus, diffImages } from "../lib/diff.js";
 import { getCanonicalPath, getOutputDir } from "../lib/output-dir.js";
 import { createS3Canonical, type PushUrls } from "../lib/s3-canonical.js";
 import { captureScreenshots, resolveUrl } from "../lib/screenshot.js";
@@ -217,20 +217,23 @@ const runCapture = async (options: CaptureOptions): Promise<void> => {
 			continue;
 		}
 
-		const result = await diffImages(canonicalPath, stagingPath);
+		const verdict = classify(
+			await diffImages(canonicalPath, stagingPath),
+			threshold,
+		);
 
-		if (result.match) {
+		if (verdict.kind === "unchanged") {
 			results.push({ id: def.id, pageUrl, status: "unchanged" });
 			fs.rmSync(stagingPath, { force: true });
 			finalPathFor.set(def.id, canonicalPath);
-		} else if (result.reason === "layout-diff") {
+		} else if (verdict.kind === "layout-changed") {
 			const item: DiffStatus = {
 				id: def.id,
 				pageUrl,
 				status: "changed",
 				reason: "layout-diff",
-				canonical: result.canonical,
-				staging: result.staging,
+				canonical: verdict.canonical,
+				staging: verdict.staging,
 			};
 			results.push(item);
 			queuePush({
@@ -247,7 +250,7 @@ const runCapture = async (options: CaptureOptions): Promise<void> => {
 				pageUrl,
 				status: "changed",
 				reason: "pixel-diff",
-				diffPercentage: result.diffPercentage,
+				diffPercentage: verdict.diffPercentage,
 			};
 			results.push(item);
 			queuePush({
@@ -354,15 +357,13 @@ const runCapture = async (options: CaptureOptions): Promise<void> => {
 		}
 	}
 
-	// Exit code: 1 if dry-run found pixel diffs over threshold (CI gate use case)
+	// dry-run CI gate: exit 1 if any pixel-diff change remains (sub-threshold
+	// ones were already reclassified to unchanged above).
 	if (dryRun) {
-		const overThreshold = changed.filter(
-			(r) =>
-				r.status === "changed" &&
-				r.reason === "pixel-diff" &&
-				r.diffPercentage / 100 > threshold,
+		const pixelChanges = changed.filter(
+			(r) => r.status === "changed" && r.reason === "pixel-diff",
 		);
-		if (overThreshold.length > 0) {
+		if (pixelChanges.length > 0) {
 			process.exitCode = 1;
 		}
 	}
