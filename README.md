@@ -136,7 +136,7 @@ The workflow triggers on `push: main` and runs `kagemusha capture` automatically
 
 ## Notifications
 
-`kagemusha capture` writes `reports/summary.json` with image URLs (when destination is S3 and a real push happened):
+`kagemusha capture` writes `reports/summary.json` with the source page URL and (for S3 destination, when a real push happened) the image URLs:
 
 ```json
 {
@@ -148,31 +148,38 @@ The workflow triggers on `push: main` and runs `kagemusha capture` automatically
   "results": [
     {
       "id": "engagements-overview",
+      "pageUrl": "https://app.example.com/engagements/overview",
       "status": "changed",
       "reason": "pixel-diff",
       "diffPercentage": 2.34,
       "urls": {
+        "latest": "https://.../engagements-overview/latest.png",
         "history": "https://.../engagements-overview/history/2026-05-15T12-34-56.789Z.png",
         "previousHistory": "https://.../engagements-overview/history/2026-05-08T09-12-03.456Z.png"
       }
     },
     {
       "id": "new-page",
+      "pageUrl": "https://app.example.com/new",
       "status": "new",
       "urls": {
+        "latest": "https://.../new-page/latest.png",
         "history": "https://.../new-page/history/2026-05-15T12-34-56.789Z.png"
       }
     },
-    { "id": "dashboard", "status": "unchanged" }
+    { "id": "dashboard", "pageUrl": "https://app.example.com/dashboard", "status": "unchanged" }
   ]
 }
 ```
 
 ### About the URLs
 
-Both `urls.history` and `urls.previousHistory` are **immutable per-run URLs** under `<id>/history/<timestamp>.png`. Use them anywhere the link will be viewed later — Slack/Intercom/email notifications, help-article embeds, PR comments. Image proxies (Slack `slack-imgs.com`, Intercom, etc.) cache by URL, so the URL must identify a stable image; that's why kagemusha publishes only immutable URLs in `summary.json`.
+`pageUrl` is the source page (`baseUrl` + the definition's `url`, with `urlParams` resolved). Always present.
 
-The history objects ship with `Cache-Control: public, max-age=31536000, immutable` so proxies and CDNs cache them aggressively — old Slack messages load their preview instantly without revalidating against S3.
+The `urls` object holds image URLs on S3 and is only populated when a real push happened (= S3 destination, not `--dry-run`):
+
+- **`urls.history` / `urls.previousHistory`** are **immutable per-run URLs** under `<id>/history/<timestamp>.png`. Embed them as bare URLs anywhere they'll be viewed later (Slack/Intercom previews, help-article embeds, PR comments). Image proxies cache by URL, so the URL must identify a stable image — that's what these guarantee. History objects ship with `Cache-Control: public, max-age=31536000, immutable`
+- **`urls.latest`** is a **mutable** URL pointing at `<id>/latest.png` (always-current canonical). Use it ONLY as a labeled link (Slack `<url|label>`, HTML `<a href>`, etc.), never as a bare URL in notification text — bare URLs get unfurled by image proxies, which would either freeze the preview on the cached bytes or silently mutate prior messages on the next release. The labeled-link form skips unfurl and sidesteps the cache entirely
 
 `previousHistory` is undefined on the first push for an id (no prior run exists). It's also undefined on the v1→v2 migration push for an id that already had v1 history (the prior `latest.png` carries no timestamp metadata) — the next push reverts to normal.
 

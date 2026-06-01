@@ -212,7 +212,10 @@ const hideElements = async (page: Page, selectors: string[]): Promise<void> => {
 	}
 };
 
-const resolveUrl = (
+// Exported so `capture` can compute the page URL for `summary.json` /
+// notifications without re-implementing the {param} substitution + baseUrl
+// resolution logic.
+export const resolveUrl = (
 	baseUrl: string,
 	urlPath: string,
 	params?: Record<string, string>,

@@ -53,12 +53,13 @@ CI の jq クエリ等で parse される。
 
 現行 fields (= schemaVersion 2):
 - top level: `schemaVersion`, `timestamp`, `dryRun`, `canonical`, `counts`, `results`
-- `results[]`: `id`, `status` ("unchanged" | "new" | "missing" | "changed")
+- `results[]`: `id`, `pageUrl`, `status` ("unchanged" | "new" | "missing" | "changed")
+  - `pageUrl` = 撮影対象ページの絶対 URL（`baseUrl + def.url`, `urlParams` 解決済み）。常に存在
 - `results[].status === "changed"`: `reason` ("pixel-diff" | "layout-diff"), 各 reason 固有 fields
-- `results[].urls?`: `{ history, previousHistory? }` — S3 destination + 実 push 時のみ存在
-  - `history` = immutable な今回 run の URL（通知/埋め込み用、`history/<timestamp>.png`）
+- `results[].urls?`: `{ latest, history, previousHistory? }` — S3 destination + 実 push 時のみ存在
+  - `history` = immutable な今回 run の URL（bare URL で埋め込み = 画像プレビュー）
   - `previousHistory` = immutable な前回 run の URL（初回 push or v1→v2 migration 時は undefined）
-  - `latest.png` は kagemusha 内部の diff baseline 用に S3 に存在するが、**public API には出さない**（mutable URL を埋め込んでほしくないため）
+  - `latest` = mutable な `latest.png` URL。**labeled link （`<url|label>` 形式）でだけ使う**（bare URL で出すと image proxy がキャッシュしてしまい、PR #34 で直したキャッシュ問題が再発）
 
 ### 2. `.kagemusha/login.mjs` の引数 shape
 

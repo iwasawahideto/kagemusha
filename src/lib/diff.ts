@@ -8,47 +8,51 @@ export interface Dimensions {
 }
 
 /**
- * URLs of the canonical artifacts on the remote (= S3). Only populated when
- * `capture` actually pushed (= default mode, S3 destination). `--dry-run` and
- * `local` destination leave this undefined.
+ * URLs of the canonical artifacts on S3. Only populated when `capture`
+ * actually pushed (default mode, S3 destination). `--dry-run` and `local`
+ * destination leave this undefined.
  *
- * Both URLs point under `history/<timestamp>.png` — **immutable per-run
- * URLs**. Image proxies (Slack, Intercom) cache by URL, so the URL must
- * identify a stable image for the embed to behave well across releases.
+ * - `history` / `previousHistory`: immutable per-run URLs. Safe to embed
+ *   as bare URLs (image proxies cache by URL and the bytes never change)
+ * - `latest`: mutable URL to `latest.png`. Use ONLY as a labeled link
+ *   (Slack `<url|label>` etc.), never as a bare URL in notification text
+ *   — proxies would cache it and break on the next release
  *
- * - `history`: this run's screenshot
- * - `previousHistory`: prior run's screenshot. Undefined on first push for
- *   this id (no prior run existed) and on the v1→v2 migration push (prior
- *   latest.png carries no timestamp metadata)
- *
- * No `diff` URL — kagemusha intentionally does not publish a pre-generated
- * diff visualization. Consumers compare history vs previousHistory raw
- * images instead.
+ * No `diff` URL — kagemusha doesn't publish a pre-generated diff
+ * visualization. Consumers compare history vs previousHistory raw images.
  */
 export interface ResultUrls {
+	latest: string;
 	history: string;
 	previousHistory?: string;
 }
 
+// `pageUrl` is the absolute URL of the page that was screenshotted
+// (`baseUrl` + the definition's `url`, with `urlParams` substituted).
+// Always present regardless of destination — local vs S3 doesn't change
+// the source page.
+interface BaseResult {
+	id: string;
+	pageUrl: string;
+}
+
 export type DiffStatus =
-	| { id: string; status: "unchanged" }
-	| { id: string; status: "new"; urls?: ResultUrls }
-	| { id: string; status: "missing"; reason?: string }
-	| {
-			id: string;
+	| (BaseResult & { status: "unchanged" })
+	| (BaseResult & { status: "new"; urls?: ResultUrls })
+	| (BaseResult & { status: "missing"; reason?: string })
+	| (BaseResult & {
 			status: "changed";
 			reason: "pixel-diff";
 			diffPercentage: number;
 			urls?: ResultUrls;
-	  }
-	| {
-			id: string;
+	  })
+	| (BaseResult & {
 			status: "changed";
 			reason: "layout-diff";
 			canonical: Dimensions;
 			staging: Dimensions;
 			urls?: ResultUrls;
-	  };
+	  });
 
 export interface DiffOptions {
 	/** Color difference threshold per pixel (0-1). Lower = stricter. Default 0.1 */

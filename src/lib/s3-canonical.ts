@@ -12,14 +12,25 @@ import { isNoSuchKey, isNotFound } from "./aws-error.js";
 export type FetchResult = "ok" | "not-found";
 
 /**
- * Immutable per-run URLs under `<id>/history/<timestamp>.png`. Both safe
- * to embed in notifications — proxies cache by URL and the bytes here
- * never change. See README "Public API" for the rationale.
+ * URLs returned alongside each push, for consumers to surface in
+ * `summary.json`.
+ *
+ * - `history` / `previousHistory`: immutable per-run URLs under
+ *   `<id>/history/<timestamp>.png`. Safe to embed as bare URLs (Slack
+ *   etc. unfurl them into image previews) because the bytes never
+ *   change at these URLs
+ * - `latest`: mutable URL to `<id>/latest.png`. Use ONLY as a labeled
+ *   link (e.g. Slack `<url|label>`), never as a bare URL in notification
+ *   text — image proxies cache by URL, so a bare `latest.png` would
+ *   either freeze on the cached preview or silently mutate under prior
+ *   messages on the next push. The labeled-link form skips unfurl and
+ *   sidesteps the cache entirely
  *
  * `previousHistory` is undefined on first push (no prior) and on the
  * v1→v2 migration push (prior latest carries no timestamp metadata).
  */
 export interface PushUrls {
+	latest: string;
 	history: string;
 	previousHistory?: string;
 }
@@ -123,6 +134,7 @@ export class S3Canonical {
 		]);
 
 		return {
+			latest: this.urlFor(this.latestKey(id)),
 			history: this.urlFor(this.historyKey(id, timestamp)),
 			previousHistory,
 		};

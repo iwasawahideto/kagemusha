@@ -8,7 +8,7 @@ import { findProjectRoot, loadConfig, loadDefinitions } from "../lib/config.js";
 import { type DiffStatus, diffImages } from "../lib/diff.js";
 import { getCanonicalPath, getOutputDir } from "../lib/output-dir.js";
 import { createS3Canonical, type PushUrls } from "../lib/s3-canonical.js";
-import { captureScreenshots } from "../lib/screenshot.js";
+import { captureScreenshots, resolveUrl } from "../lib/screenshot.js";
 import {
 	cleanupStaging,
 	ensureStagingDirs,
@@ -175,10 +175,12 @@ const runCapture = async (options: CaptureOptions): Promise<void> => {
 	for (const def of definitions) {
 		const canonicalPath = getCanonicalPath(config, projectRoot, def.id);
 		const stagingPath = getStagingPath(projectRoot, def.id);
+		const pageUrl = resolveUrl(config.app.baseUrl, def.url, def.urlParams);
 
 		if (!fs.existsSync(stagingPath)) {
 			results.push({
 				id: def.id,
+				pageUrl,
 				status: "missing",
 				reason: failureReasons.get(def.id),
 			});
@@ -202,7 +204,7 @@ const runCapture = async (options: CaptureOptions): Promise<void> => {
 
 		// New: no canonical yet — adopt staging as canonical (unless dry-run)
 		if (fetchResult === "not-found") {
-			const result: DiffStatus = { id: def.id, status: "new" };
+			const result: DiffStatus = { id: def.id, pageUrl, status: "new" };
 			results.push(result);
 			queuePush({
 				id: def.id,
@@ -218,12 +220,13 @@ const runCapture = async (options: CaptureOptions): Promise<void> => {
 		const result = await diffImages(canonicalPath, stagingPath);
 
 		if (result.match) {
-			results.push({ id: def.id, status: "unchanged" });
+			results.push({ id: def.id, pageUrl, status: "unchanged" });
 			fs.rmSync(stagingPath, { force: true });
 			finalPathFor.set(def.id, canonicalPath);
 		} else if (result.reason === "layout-diff") {
 			const item: DiffStatus = {
 				id: def.id,
+				pageUrl,
 				status: "changed",
 				reason: "layout-diff",
 				canonical: result.canonical,
@@ -241,6 +244,7 @@ const runCapture = async (options: CaptureOptions): Promise<void> => {
 		} else {
 			const item: DiffStatus = {
 				id: def.id,
+				pageUrl,
 				status: "changed",
 				reason: "pixel-diff",
 				diffPercentage: result.diffPercentage,

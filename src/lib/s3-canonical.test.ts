@@ -126,6 +126,18 @@ describe("S3Canonical.push", () => {
 		expect(s3Mock.commandCalls(PutObjectCommand)).toHaveLength(2);
 	});
 
+	it("returns urls.latest pointing at latest.png for notification linking", async () => {
+		s3Mock
+			.on(HeadObjectCommand)
+			.rejects(new NotFound({ message: "", $metadata: {} }));
+		s3Mock.on(PutObjectCommand).resolves({});
+
+		const canonical = new S3Canonical(BUCKET, CDN_BASE);
+		const urls = await canonical.push(ID, localPath);
+
+		expect(urls.latest).toBe(`${CDN_BASE}/${ID}/latest.png`);
+	});
+
 	it("v1 migration push (HEAD ok, no metadata): previousHistory undefined, history set", async () => {
 		s3Mock.on(HeadObjectCommand).resolves({ Metadata: {} });
 		s3Mock.on(PutObjectCommand).resolves({});
