@@ -5,7 +5,7 @@ import chalk from "chalk";
 import { hasAuthState, resolveLoginScriptPath } from "../lib/auth.js";
 import { handleAwsError } from "../lib/aws-error.js";
 import { findProjectRoot, loadConfig, loadDefinitions } from "../lib/config.js";
-import { type DiffStatus, diffImages } from "../lib/diff.js";
+import { type DiffStatus, diffImages, isOverThreshold } from "../lib/diff.js";
 import { getCanonicalPath, getOutputDir } from "../lib/output-dir.js";
 import { createS3Canonical, type PushUrls } from "../lib/s3-canonical.js";
 import { captureScreenshots, resolveUrl } from "../lib/screenshot.js";
@@ -241,6 +241,14 @@ const runCapture = async (options: CaptureOptions): Promise<void> => {
 					if (urls) item.urls = urls;
 				},
 			});
+		} else if (!isOverThreshold(result.diffPercentage, threshold)) {
+			// pixel-diff at or below threshold — treat as unchanged. Skips both
+			// the Slack notification (= `select(.status == "changed")` filter)
+			// and the S3 push, matching what users expect from
+			// `defaultDiffThreshold` in `kagemusha.config.yaml`.
+			results.push({ id: def.id, pageUrl, status: "unchanged" });
+			fs.rmSync(stagingPath, { force: true });
+			finalPathFor.set(def.id, canonicalPath);
 		} else {
 			const item: DiffStatus = {
 				id: def.id,
@@ -354,15 +362,14 @@ const runCapture = async (options: CaptureOptions): Promise<void> => {
 		}
 	}
 
-	// Exit code: 1 if dry-run found pixel diffs over threshold (CI gate use case)
+	// Exit code: 1 if dry-run saw any pixel-diff in `changed` (CI gate use
+	// case). All pixel-diff entries are guaranteed > threshold — sub-threshold
+	// diffs were already reclassified as unchanged above.
 	if (dryRun) {
-		const overThreshold = changed.filter(
-			(r) =>
-				r.status === "changed" &&
-				r.reason === "pixel-diff" &&
-				r.diffPercentage / 100 > threshold,
+		const pixelChanges = changed.filter(
+			(r) => r.status === "changed" && r.reason === "pixel-diff",
 		);
-		if (overThreshold.length > 0) {
+		if (pixelChanges.length > 0) {
 			process.exitCode = 1;
 		}
 	}
