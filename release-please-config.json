@@ -6,7 +6,8 @@
   "pull-request-reviewers": ["iwasawahideto"],
   "packages": {
     ".": {
-      "package-name": "@wasao/kagemusha"
+      "package-name": "@wasao/kagemusha",
+      "bump-minor-pre-major": true
     }
   }
 }
