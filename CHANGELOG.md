@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.4.0](https://github.com/iwasawahideto/kagemusha/compare/v0.3.6...v0.4.0) (2026-06-01)
+
+
+### ⚠ BREAKING CHANGES
+
+* `summary.json` schemaVersion bumped 1 → 2. `urls.before` and `urls.after` removed; use `urls.previousHistory` and `urls.history` instead. Existing `.kagemusha/notify-slack.jq` files must be updated from `templates/notify-slack.jq` to keep Slack image previews working.
+
+### Features
+
+* include pageUrl and latest URL in summary.json + notifications ([#36](https://github.com/iwasawahideto/kagemusha/issues/36)) ([f28c25a](https://github.com/iwasawahideto/kagemusha/commit/f28c25a3aba6333b21ff9da9855020712387d69a))
+* switch summary.json urls to immutable per-run history URLs ([#34](https://github.com/iwasawahideto/kagemusha/issues/34)) ([7dc28e6](https://github.com/iwasawahideto/kagemusha/commit/7dc28e65673238b849e54f29a25d2000eb2cdb76))
+
+
+### Bug Fixes
+
+* apply defaultDiffThreshold to changed-vs-unchanged classification ([#37](https://github.com/iwasawahideto/kagemusha/issues/37)) ([e9a6eb7](https://github.com/iwasawahideto/kagemusha/commit/e9a6eb782c0610a4f41cf5f8136db2e494856084))
+* install Japanese fonts and color emoji in generated workflow template ([#32](https://github.com/iwasawahideto/kagemusha/issues/32)) ([b223368](https://github.com/iwasawahideto/kagemusha/commit/b22336820c907fb6727c4555a374786aab3ed2cf))
+
 ## [0.3.6](https://github.com/iwasawahideto/kagemusha/compare/v0.3.5...v0.3.6) (2026-05-18)
 
 
