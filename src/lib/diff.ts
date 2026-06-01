@@ -61,16 +61,8 @@ export interface DiffOptions {
 	ignoreAntiAliasing?: boolean;
 }
 
-/**
- * Whether a pixel diff exceeds the configured "changed-vs-unchanged"
- * threshold and should be surfaced. Strictly greater so a diff exactly
- * at the threshold counts as unchanged (matches the dry-run gate's
- * existing `> threshold` semantics).
- *
- * `diffPercentage` is in percent (e.g. 2.34 = 2.34%). `threshold` is in
- * fraction (e.g. 0.005 = 0.5%) — matching `defaultDiffThreshold` in
- * `kagemusha.config.yaml`.
- */
+// `diffPercentage` is in % (e.g. 2.34), `threshold` is in fraction
+// (e.g. 0.005). Strict `>` so a diff exactly at threshold = unchanged.
 export const isOverThreshold = (
 	diffPercentage: number,
 	threshold: number,

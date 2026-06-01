@@ -242,10 +242,7 @@ const runCapture = async (options: CaptureOptions): Promise<void> => {
 				},
 			});
 		} else if (!isOverThreshold(result.diffPercentage, threshold)) {
-			// pixel-diff at or below threshold — treat as unchanged. Skips both
-			// the Slack notification (= `select(.status == "changed")` filter)
-			// and the S3 push, matching what users expect from
-			// `defaultDiffThreshold` in `kagemusha.config.yaml`.
+			// sub-threshold pixel-diff → treat as unchanged
 			results.push({ id: def.id, pageUrl, status: "unchanged" });
 			fs.rmSync(stagingPath, { force: true });
 			finalPathFor.set(def.id, canonicalPath);
@@ -362,9 +359,8 @@ const runCapture = async (options: CaptureOptions): Promise<void> => {
 		}
 	}
 
-	// Exit code: 1 if dry-run saw any pixel-diff in `changed` (CI gate use
-	// case). All pixel-diff entries are guaranteed > threshold — sub-threshold
-	// diffs were already reclassified as unchanged above.
+	// dry-run CI gate: exit 1 if any pixel-diff change remains (sub-threshold
+	// ones were already reclassified to unchanged above).
 	if (dryRun) {
 		const pixelChanges = changed.filter(
 			(r) => r.status === "changed" && r.reason === "pixel-diff",
