@@ -13,6 +13,7 @@
 //   message-bus events but keep the same step shape.
 
 import { computeSelector } from "./selector.js";
+import { exitSnapshotMode } from "./snapshot.js";
 import { state } from "./state.js";
 import type { CaptureAction } from "./types.js";
 
@@ -168,6 +169,8 @@ const updateToolbarLockState = (): void => {
 
 const setRecording = (on: boolean): void => {
 	if (on) {
+		// Recording needs the live DOM — drop the snapshot first.
+		if (state.snapshotMode) exitSnapshotMode();
 		if (state.recordedSteps.length > 0) {
 			const ok = window.confirm(
 				`Recording will replace the existing ${state.recordedSteps.length} step(s). Continue?`,
@@ -182,6 +185,10 @@ const setRecording = (on: boolean): void => {
 	}
 	updateToolbarLockState();
 	renderPanel();
+	// Stop with steps → render the snapshot (fire-and-forget; reply via enterSnapshotMode).
+	if (!on && state.recordedSteps.length > 0) {
+		void window.__kagemusha_replay?.(JSON.stringify(state.recordedSteps));
+	}
 };
 
 // --- Picker mode (single-shot element selection for + Hover / + WaitForSelector) ---

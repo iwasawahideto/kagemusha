@@ -11,7 +11,7 @@ import {
 } from "../lib/config.js";
 import { waitForPageReady } from "../lib/page-ready.js";
 import { launchOptionsFor } from "../lib/playwright-launch.js";
-import { executeActions } from "../lib/screenshot.js";
+import { renderSnapshot } from "../lib/screenshot.js";
 import type { CaptureAction, ScreenshotDefinition } from "../types.js";
 
 interface EditOptions {
@@ -100,27 +100,6 @@ export const editCommand = async (options: EditOptions): Promise<void> => {
 	await page.goto(fullUrl, { waitUntil: "load", timeout: 0 });
 	await waitForPageReady(page);
 
-	// Replay existing beforeCapture so the user authors annotations on the
-	// same page state kagemusha will eventually screenshot (= modal closed,
-	// hover active, scrolled-into-view, etc). Non-optional failures here
-	// would break the edit session, so we soften them to a warning — the
-	// user can still operate, just with a less-accurate base state.
-	if (def.beforeCapture?.length) {
-		try {
-			await executeActions(page, def.beforeCapture);
-		} catch (e) {
-			const reason = e instanceof Error ? e.message : String(e);
-			console.log(
-				chalk.yellow(`⚠ beforeCapture step failed during edit: ${reason}`),
-			);
-			console.log(
-				chalk.gray(
-					"  Continuing without that step. Mark it `optional: true` in definitions.json if it's intermittent.",
-				),
-			);
-		}
-	}
-
 	if (def.hideElements?.length) {
 		for (const selector of def.hideElements) {
 			await page.evaluate((sel) => {
@@ -130,6 +109,37 @@ export const editCommand = async (options: EditOptions): Promise<void> => {
 			}, selector);
 		}
 	}
+
+	const setLoading = async (on: boolean): Promise<void> => {
+		await page
+			.evaluate((v) => {
+				(
+					window as unknown as {
+						__kagemusha_snapshotLoading?: (on: boolean) => void;
+					}
+				).__kagemusha_snapshotLoading?.(v);
+			}, on)
+			.catch(() => {});
+	};
+
+	const showSnapshot = async (steps: CaptureAction[]): Promise<void> => {
+		// Veil during the render; enterSnapshotMode drops it once the image lands.
+		await setLoading(true);
+		try {
+			const buffer = await renderSnapshot(config, def, steps, projectRoot);
+			const dataUrl = `data:image/png;base64,${buffer.toString("base64")}`;
+			await page.evaluate((url) => {
+				(
+					window as unknown as {
+						__kagemusha_enterSnapshotMode: (u: string) => void;
+					}
+				).__kagemusha_enterSnapshotMode(url);
+			}, dataUrl);
+		} catch (e) {
+			await setLoading(false);
+			throw e;
+		}
+	};
 
 	// Expose save function from Node.js to browser
 	let savedCount = 0;
@@ -166,6 +176,28 @@ export const editCommand = async (options: EditOptions): Promise<void> => {
 		saveResolve();
 	});
 
+	// Record → Stop sends the recorded steps here to render the snapshot.
+	await page.exposeFunction("__kagemusha_replay", async (stepsJson: string) => {
+		try {
+			const steps = JSON.parse(stepsJson) as CaptureAction[];
+			console.log(
+				chalk.blue("📸 Rendering the replayed state (headless snapshot)..."),
+			);
+			await showSnapshot(steps);
+			console.log(
+				chalk.blue("🎨 Snapshot ready — draw annotations, then click Save.\n"),
+			);
+		} catch (e) {
+			const reason = e instanceof Error ? e.message : String(e);
+			console.log(chalk.yellow(`⚠ Snapshot render failed: ${reason}`));
+			console.log(
+				chalk.gray(
+					"  You can still draw on the live page, or fix the step and Record again.",
+				),
+			);
+		}
+	});
+
 	// Inject editor script — DPR is read from window.devicePixelRatio inside,
 	// which matches the value set on the browser context above.
 	const editorScript = loadEditorScript();
@@ -200,6 +232,22 @@ export const editCommand = async (options: EditOptions): Promise<void> => {
 			}
 		).__kagemusha_loadSteps(steps);
 	}, def.beforeCapture ?? []);
+
+	// Existing pre-steps → render the snapshot on open. Non-fatal on failure.
+	if (def.beforeCapture?.length) {
+		try {
+			console.log(
+				chalk.blue("📸 Replaying pre-steps and rendering snapshot..."),
+			);
+			await showSnapshot(def.beforeCapture);
+		} catch (e) {
+			const reason = e instanceof Error ? e.message : String(e);
+			console.log(chalk.yellow(`⚠ Snapshot render failed: ${reason}`));
+			console.log(
+				chalk.gray("  Continuing on the live page. Mark flaky steps optional."),
+			);
+		}
+	}
 
 	console.log(
 		chalk.blue("🎨 Editor ready. Draw annotations, then click Save.\n"),
