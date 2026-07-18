@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import chalk from "chalk";
@@ -6,6 +5,7 @@ import { hasAuthState, resolveLoginScriptPath } from "../lib/auth.js";
 import { handleAwsError } from "../lib/aws-error.js";
 import { findProjectRoot, loadConfig, loadDefinitions } from "../lib/config.js";
 import { classify, type DiffStatus, diffImages } from "../lib/diff.js";
+import { openInDefaultApp } from "../lib/open.js";
 import { getCanonicalPath, getOutputDir } from "../lib/output-dir.js";
 import { createS3Canonical, type PushUrls } from "../lib/s3-canonical.js";
 import { captureScreenshots, resolveUrl } from "../lib/screenshot.js";
@@ -49,25 +49,6 @@ const writeSummaryReport = (
 	const reportPath = path.join(projectRoot, "reports", "summary.json");
 	fs.mkdirSync(path.dirname(reportPath), { recursive: true });
 	fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
-};
-
-// Open a file with the OS's default viewer (Preview on macOS, etc.).
-// `detached + unref` lets the kagemusha process exit while the viewer keeps
-// running. We deliberately avoid `shell: true` so paths with spaces don't get
-// re-split — argv is passed straight through to the program.
-const openInDefaultApp = (filePath: string): void => {
-	if (process.platform === "darwin") {
-		spawn("open", [filePath], { detached: true, stdio: "ignore" }).unref();
-	} else if (process.platform === "win32") {
-		// `start` is a cmd.exe builtin; we invoke cmd directly. The empty
-		// string after `start` is the (required) window title placeholder.
-		spawn("cmd", ["/c", "start", "", filePath], {
-			detached: true,
-			stdio: "ignore",
-		}).unref();
-	} else {
-		spawn("xdg-open", [filePath], { detached: true, stdio: "ignore" }).unref();
-	}
 };
 
 export const captureCommand = async (

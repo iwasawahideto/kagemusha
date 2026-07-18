@@ -11,6 +11,7 @@ import { editCommand } from "./commands/edit.js";
 import { initCommand } from "./commands/init.js";
 import { listCommand } from "./commands/list.js";
 import { loginCommand } from "./commands/login.js";
+import { previewCommand } from "./commands/preview.js";
 import { validateCommand } from "./commands/validate.js";
 
 // Read version from package.json at runtime so release-please only needs to
@@ -98,6 +99,15 @@ program
 	.description("Open visual annotation editor for a screenshot")
 	.option("--id <id>", "Screenshot definition ID to edit")
 	.action(editCommand);
+
+program
+	.command("preview")
+	.description(
+		"Render screenshots locally and open them — visual check only (no diff, no S3)",
+	)
+	.option("--ids <ids>", "Comma-separated screenshot definition IDs")
+	.option("--no-open", "Don't open the rendered images afterward")
+	.action(previewCommand);
 
 program
 	.command("validate")
