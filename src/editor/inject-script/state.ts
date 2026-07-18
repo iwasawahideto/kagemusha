@@ -49,6 +49,9 @@ interface EditorState {
 	recordedSteps: CaptureAction[];
 	recording: boolean;
 	pickerKind: PickerKind | null;
+
+	// Drawing over a frozen snapshot instead of the live DOM (see snapshot.ts).
+	snapshotMode: boolean;
 }
 
 export const state: EditorState = {
@@ -63,6 +66,7 @@ export const state: EditorState = {
 	recordedSteps: [],
 	recording: false,
 	pickerKind: null,
+	snapshotMode: false,
 };
 
 export const allocateAnnotationId = (): string => `a${state.nextId++}`;

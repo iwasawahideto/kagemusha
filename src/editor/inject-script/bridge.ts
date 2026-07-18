@@ -7,6 +7,7 @@ import { loadAnnotations, serializeAnnotations } from "./annotations.js";
 import { loadCapture, serializeCapture } from "./crop.js";
 import { showErrorToast } from "./dom.js";
 import { loadSteps, serializeSteps } from "./record.js";
+import { enterSnapshotMode, setSnapshotLoading } from "./snapshot.js";
 import { state } from "./state.js";
 import { setCaptureMode } from "./toolbar.js";
 import type { CaptureAction, CaptureSpec, Decoration } from "./types.js";
@@ -17,6 +18,9 @@ declare global {
 		__kagemusha_loadAnnotations: (decorations: Decoration[]) => void;
 		__kagemusha_loadCapture: (capture: CaptureSpec) => void;
 		__kagemusha_loadSteps: (steps: CaptureAction[]) => void;
+		__kagemusha_enterSnapshotMode: (dataUrl: string) => void;
+		__kagemusha_snapshotLoading: (on: boolean) => void;
+		__kagemusha_replay?: (stepsJson: string) => Promise<void>;
 	}
 }
 
@@ -46,6 +50,12 @@ export const initBridge = (): { save: () => void } => {
 	};
 	window.__kagemusha_loadSteps = (steps: CaptureAction[]) => {
 		loadSteps(steps);
+	};
+	window.__kagemusha_enterSnapshotMode = (dataUrl: string) => {
+		enterSnapshotMode(dataUrl);
+	};
+	window.__kagemusha_snapshotLoading = (on: boolean) => {
+		setSnapshotLoading(on);
 	};
 	return { save };
 };
