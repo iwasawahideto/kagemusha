@@ -161,7 +161,8 @@ const takeScreenshotBuffer = async (
 const isPresent = async (page: Page, selector: string): Promise<boolean> =>
 	(await page.$(selector)) !== null;
 
-// Editor snapshot replay: `soft` skips a failing step, `timeout` fails fast. Capture passes neither.
+// `soft` skips a failing step instead of aborting; `timeout` fails fast. Capture
+// passes neither (strict, default timeout). Visible-match preference always applies.
 export interface ReplayOptions {
 	soft?: boolean;
 	timeout?: number;
@@ -204,11 +205,7 @@ const runAction = async (
 	switch (action.action) {
 		case "click":
 			if (action.optional && !(await isPresent(page, action.selector))) return;
-			if (opts.soft) {
-				await actOnFirstVisible(page, action.selector, timeout, "click");
-				return;
-			}
-			await page.click(action.selector, { timeout });
+			await actOnFirstVisible(page, action.selector, timeout, "click");
 			return;
 		case "type":
 			if (action.optional && !(await isPresent(page, action.selector))) return;
@@ -220,11 +217,7 @@ const runAction = async (
 			return;
 		case "hover":
 			if (action.optional && !(await isPresent(page, action.selector))) return;
-			if (opts.soft) {
-				await actOnFirstVisible(page, action.selector, timeout, "hover");
-				return;
-			}
-			await page.hover(action.selector, { timeout });
+			await actOnFirstVisible(page, action.selector, timeout, "hover");
 			return;
 		case "scroll":
 			if (action.selector) {
