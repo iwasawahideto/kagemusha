@@ -40,6 +40,7 @@ npx kagemusha capture --dry-run
 | `kagemusha list` | List all definitions |
 | `kagemusha edit --id <id>` | Open the visual editor (crop range + annotations) |
 | `kagemusha capture` | Capture → diff → publish (use `--dry-run` to preview) |
+| `kagemusha preview` | Render screenshots locally and open them — visual check only (no diff, no S3) |
 | `kagemusha validate` | Validate config and definition files |
 
 ## Configuration
