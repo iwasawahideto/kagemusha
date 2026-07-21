@@ -146,9 +146,17 @@ describe("executeActions (soft replay)", () => {
 	});
 
 	it("non-soft: a failing step propagates (capture stays strict)", async () => {
-		const { page } = makeFakePage({ failPageClick: new Set(["a"]) });
+		const { page } = makeFakePage({ failLocatorClick: new Set(["a"]) });
 		await expect(
 			executeActions(page, [{ action: "click", selector: "a" }]),
 		).rejects.toThrow();
+	});
+
+	it("non-soft: also prefers the first visible match (capture)", async () => {
+		const { page, calls } = makeFakePage({
+			visible: { 'text="x"': [false, true] },
+		});
+		await executeActions(page, [{ action: "click", selector: 'text="x"' }]);
+		expect(calls).toContain('loc.click:text="x"#1:');
 	});
 });
