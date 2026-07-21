@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.0](https://github.com/iwasawahideto/kagemusha/compare/v0.4.0...v0.5.0) (2026-07-21)
+
+
+### Features
+
+* **editor:** 再生後の状態のスナップショット上に注釈できるようにする ([#40](https://github.com/iwasawahideto/kagemusha/issues/40)) ([fb7f644](https://github.com/iwasawahideto/kagemusha/commit/fb7f6442d96f4de40159cb162f5208cd675ed486))
+* **preview:** ローカルで撮影して開く preview コマンドを追加 ([#42](https://github.com/iwasawahideto/kagemusha/issues/42)) ([fe9e29f](https://github.com/iwasawahideto/kagemusha/commit/fe9e29ffcee8bf996359fb42b3242e462310c434))
+
+
+### Bug Fixes
+
+* **capture:** 曖昧な text= セレクタで可視要素を優先する（capture/preview） ([#43](https://github.com/iwasawahideto/kagemusha/issues/43)) ([370d9ed](https://github.com/iwasawahideto/kagemusha/commit/370d9edae9b8eb40ed5f057f89529fa0304fa324))
+
 ## [0.4.0](https://github.com/iwasawahideto/kagemusha/compare/v0.3.6...v0.4.0) (2026-06-01)
 
 
