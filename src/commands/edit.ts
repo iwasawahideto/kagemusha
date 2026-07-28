@@ -11,7 +11,10 @@ import {
 } from "../lib/config.js";
 import { waitForPageReady } from "../lib/page-ready.js";
 import { launchOptionsFor } from "../lib/playwright-launch.js";
-import { renderSnapshot } from "../lib/screenshot.js";
+import {
+	createSnapshotRenderer,
+	type SnapshotRenderer,
+} from "../lib/screenshot.js";
 import type { CaptureAction, ScreenshotDefinition } from "../types.js";
 
 interface EditOptions {
@@ -53,6 +56,20 @@ export const editCommand = async (options: EditOptions): Promise<void> => {
 	}
 
 	const def = definitions[0];
+
+	// Lazily launched on the first snapshot, then reused across renders.
+	let rendererPromise: Promise<SnapshotRenderer> | null = null;
+	const getRenderer = (): Promise<SnapshotRenderer> => {
+		if (!rendererPromise)
+			rendererPromise = createSnapshotRenderer(config, projectRoot);
+		return rendererPromise;
+	};
+	const closeRenderer = async (): Promise<void> => {
+		if (!rendererPromise) return;
+		try {
+			await (await rendererPromise).close();
+		} catch {}
+	};
 
 	const { chromium } = await import("playwright-core");
 	const browser = await chromium.launch({
@@ -122,11 +139,15 @@ export const editCommand = async (options: EditOptions): Promise<void> => {
 			.catch(() => {});
 	};
 
-	const showSnapshot = async (steps: CaptureAction[]): Promise<void> => {
+	const showSnapshot = async (
+		steps: CaptureAction[],
+		zoom = 1,
+	): Promise<void> => {
 		// Veil during the render; enterSnapshotMode drops it once the image lands.
 		await setLoading(true);
 		try {
-			const buffer = await renderSnapshot(config, def, steps, projectRoot);
+			const r = await getRenderer();
+			const buffer = await r.render(def, steps, zoom);
 			const dataUrl = `data:image/png;base64,${buffer.toString("base64")}`;
 			await page.evaluate((url) => {
 				(
@@ -154,6 +175,7 @@ export const editCommand = async (options: EditOptions): Promise<void> => {
 			decorations: ScreenshotDefinition["decorations"];
 			capture: ScreenshotDefinition["capture"];
 			beforeCapture?: CaptureAction[];
+			zoom?: number;
 		};
 		savedCount = payload.decorations?.length ?? 0;
 		const allDefs = loadDefinitions(projectRoot);
@@ -170,6 +192,8 @@ export const editCommand = async (options: EditOptions): Promise<void> => {
 					payload.beforeCapture && payload.beforeCapture.length > 0
 						? payload.beforeCapture
 						: undefined,
+				// Drop the default so unzoomed defs stay unchanged in json.
+				zoom: payload.zoom && payload.zoom !== 1 ? payload.zoom : undefined,
 			};
 		}
 		saveDefinitions(allDefs, projectRoot);
@@ -197,6 +221,25 @@ export const editCommand = async (options: EditOptions): Promise<void> => {
 			);
 		}
 	});
+
+	await page.exposeFunction(
+		"__kagemusha_setZoom",
+		async (payloadJson: string) => {
+			try {
+				const { zoom, steps } = JSON.parse(payloadJson) as {
+					zoom: number;
+					steps: CaptureAction[];
+				};
+				console.log(
+					chalk.blue(`🔍 Rendering at ${Math.round(zoom * 100)}%...`),
+				);
+				await showSnapshot(steps, zoom);
+			} catch (e) {
+				const reason = e instanceof Error ? e.message : String(e);
+				console.log(chalk.yellow(`⚠ Zoom render failed: ${reason}`));
+			}
+		},
+	);
 
 	// Inject editor script — DPR is read from window.devicePixelRatio inside,
 	// which matches the value set on the browser context above.
@@ -233,13 +276,19 @@ export const editCommand = async (options: EditOptions): Promise<void> => {
 		).__kagemusha_loadSteps(steps);
 	}, def.beforeCapture ?? []);
 
-	// Existing pre-steps → render the snapshot on open. Non-fatal on failure.
-	if (def.beforeCapture?.length) {
+	const initialZoom = def.zoom ?? 1;
+	await page.evaluate((z) => {
+		(
+			window as unknown as {
+				__kagemusha_loadZoom: (zoom: number) => void;
+			}
+		).__kagemusha_loadZoom(z);
+	}, initialZoom);
+
+	if (def.beforeCapture?.length || initialZoom !== 1) {
 		try {
-			console.log(
-				chalk.blue("📸 Replaying pre-steps and rendering snapshot..."),
-			);
-			await showSnapshot(def.beforeCapture);
+			console.log(chalk.blue("📸 Rendering initial snapshot..."));
+			await showSnapshot(def.beforeCapture ?? [], initialZoom);
 		} catch (e) {
 			const reason = e instanceof Error ? e.message : String(e);
 			console.log(chalk.yellow(`⚠ Snapshot render failed: ${reason}`));
@@ -253,18 +302,26 @@ export const editCommand = async (options: EditOptions): Promise<void> => {
 		chalk.blue("🎨 Editor ready. Draw annotations, then click Save.\n"),
 	);
 
-	// Wait for save or browser close
+	// process.exit guarantees this one-shot command exits even if a browser
+	// leaves a lingering handle; the window closes first so it disappears at once.
+	const shutdown = async (): Promise<never> => {
+		await browser.close().catch(() => {});
+		await Promise.race([
+			closeRenderer(),
+			new Promise<void>((resolve) => setTimeout(resolve, 3000)),
+		]);
+		process.exit(0);
+	};
+
 	try {
 		await savePromise;
 	} catch {
 		console.log(chalk.yellow("\n⚠ Editor closed without saving.\n"));
-		await browser.close().catch(() => {});
-		return;
+		await shutdown();
 	}
-
-	await browser.close();
 
 	console.log(
 		chalk.bold.green(`\n✅ Saved ${savedCount} annotation(s) for ${def.id}\n`),
 	);
+	await shutdown();
 };
