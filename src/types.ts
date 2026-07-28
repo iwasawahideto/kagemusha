@@ -34,6 +34,9 @@ export interface Route {
 export interface Viewport {
 	width: number;
 	height: number;
+	// Only read from `config.screenshot.defaultViewport` (the base DPR shared by
+	// editor + capture). A per-definition `viewport.deviceScaleFactor` is ignored
+	// so annotations captured at the config DPR don't drift.
 	deviceScaleFactor?: number;
 }
 
@@ -43,6 +46,8 @@ export interface ScreenshotDefinition {
 	url: string;
 	urlParams?: Record<string, string>;
 	viewport?: Viewport;
+	// 縮尺. 1 = 100% (default). Range (0, 2].
+	zoom?: number;
 	beforeCapture?: CaptureAction[];
 	capture: CaptureSpec;
 	decorations?: Decoration[];
