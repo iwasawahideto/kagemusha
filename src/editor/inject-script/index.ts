@@ -14,6 +14,7 @@ import * as crop from "./crop.js";
 import { initRecord } from "./record.js";
 import { initSvgLayer } from "./svg.js";
 import { initToolbar } from "./toolbar.js";
+import { handleZoomKey, initZoom } from "./zoom.js";
 
 // Prevent inject-time elements (toolbar / svg / hint / panel) from
 // extending document.documentElement.scrollHeight. Some SPAs run
@@ -42,6 +43,7 @@ initToolbar(
 
 crop.initCrop();
 initRecord(svg);
+initZoom();
 ({ save: bridgeSave } = initBridge());
 
 // --- Mouse dispatcher ---
@@ -63,6 +65,7 @@ document.addEventListener("mouseup", (e: MouseEvent) => {
 	annotations.handleMouseUp(e);
 });
 
-document.addEventListener("keydown", (e: KeyboardEvent) =>
-	annotations.handleKeyDown(e),
-);
+document.addEventListener("keydown", (e: KeyboardEvent) => {
+	if (handleZoomKey(e)) return;
+	annotations.handleKeyDown(e);
+});

@@ -14,13 +14,10 @@ export const initSvgLayer = (): {
 	svg.id = "kagemusha-svg-layer";
 	svg.classList.add("drawing");
 	document.documentElement.appendChild(svg);
+	svgEl = svg; // set before resizeSvgToDocument (which reads svgEl)
 
-	const updateSvgSize = () => {
-		svg.setAttribute("width", String(window.innerWidth));
-		svg.setAttribute("height", String(document.documentElement.scrollHeight));
-	};
-	updateSvgSize();
-	window.addEventListener("resize", updateSvgSize);
+	resizeSvgToDocument();
+	window.addEventListener("resize", resizeSvgToDocument);
 
 	const defs = document.createElementNS(SVG_NS, "defs");
 	defs.innerHTML =
@@ -35,6 +32,12 @@ export const initSvgLayer = (): {
 	svgEl = svg;
 	captureGroupEl = captureGroup;
 	return { svg, captureGroup };
+};
+
+export const resizeSvgToDocument = (): void => {
+	if (!svgEl) return;
+	svgEl.setAttribute("width", String(window.innerWidth));
+	svgEl.setAttribute("height", String(document.documentElement.scrollHeight));
 };
 
 export const getSvg = (): SVGElement => {

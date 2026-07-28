@@ -10,7 +10,7 @@ The shadow warrior for your documentation.
 - **One verb (`capture`)** — capture → diff → push, all in one command
 - **S3-first** — `<id>/latest.png` is the canonical, embedded directly into help articles
 - **Component-level capture** — Playwright-powered, full-page / crop, pre-capture actions, element hiding
-- **Visual editor** — draw rectangles, arrows, labels; pick crop range by drag (`kagemusha edit`)
+- **Visual editor** — draw rectangles, arrows, labels; pick crop range by drag; set zoom / 縮尺 (`kagemusha edit`)
 - **Login once** — store `storageState` locally, or run a scripted login on every CI run
 - **Slack-ready** — `reports/summary.json` ships immutable per-run URLs so notifications include image previews that don't break later
 
@@ -76,6 +76,7 @@ Definition (`.kagemusha/definitions.json`):
     "id": "dashboard",
     "url": "/dashboard",
     "capture": { "mode": "fullPage" },
+    "zoom": 0.9,
     "hideElements": [".intercom-launcher"],
     "decorations": [
       { "type": "rect", "target": { "x": 32, "y": 120, "width": 310, "height": 120 } }
@@ -85,6 +86,15 @@ Definition (`.kagemusha/definitions.json`):
 ```
 
 Run `kagemusha edit --id dashboard` to set the crop range and add decorations visually.
+
+`zoom` (optional, default `1`) reproduces real browser zoom: content reflows and
+renders smaller so more fits, exactly as it looks in the editor. The output PNG
+resolution stays constant regardless of zoom (base viewport × `deviceScaleFactor`).
+In the editor, set it with the `−` / `%` / `+` buttons or `⌘+` / `⌘−` / `⌘0`; the
+value is saved per definition. Decide the zoom before drawing annotations — changing
+it reflows the page, which shifts where existing annotations land. Prefer the
+editor's zoom steps (25%–200%); a hand-edited value between steps can shift the
+output by a pixel or two.
 
 ## Avoiding loading-state screenshots
 

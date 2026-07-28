@@ -2,7 +2,7 @@
 // screenshot of the replayed state (headless keeps hover menus open, headed drops them).
 
 import { state } from "./state.js";
-import { getSvg } from "./svg.js";
+import { getSvg, resizeSvgToDocument } from "./svg.js";
 
 const SNAPSHOT_ID = "kagemusha-snapshot";
 const SNAPSHOT_Z = 2147483645; // just below the SVG layer
@@ -17,9 +17,10 @@ export const setSnapshotLoading = (on: boolean): void => {
 	if (existing) return;
 	const el = document.createElement("div");
 	el.id = LOADING_ID;
+	// Below the toolbar so Save / zoom stay clickable during a render.
 	el.setAttribute(
 		"style",
-		"position:fixed;inset:0;z-index:var(--kg-z-top);" +
+		"position:fixed;inset:0;z-index:var(--kg-z-below-top);" +
 			"background:rgba(15,15,30,0.86);display:flex;flex-direction:column;" +
 			"align-items:center;justify-content:center;gap:14px;" +
 			"font-family:-apple-system,sans-serif;color:#fff;",
@@ -70,4 +71,6 @@ export const exitSnapshotMode = (): void => {
 	document.getElementById(SNAPSHOT_ID)?.remove();
 	setSnapshotLoading(false);
 	document.documentElement.style.overflow = "hidden";
+	// Overlay was sized to the snapshot image; restore it to the live document.
+	resizeSvgToDocument();
 };

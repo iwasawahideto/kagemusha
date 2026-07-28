@@ -20,6 +20,13 @@ export const SVG_NS = "http://www.w3.org/2000/svg";
 export const HANDLE_SIZE = 10;
 export const MIN_CROP = 10;
 
+// Chrome-like zoom ladder. ⌘0 snaps to 1.
+export const ZOOM_LEVELS = [
+	0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2,
+];
+export const MIN_ZOOM = 0.25;
+export const MAX_ZOOM = 2;
+
 // --- Mutable state ---
 // `state` is a plain object so DOM modules can mutate fields directly during
 // this pass. The GUI port will swap this for a store with explicit actions,
@@ -52,6 +59,9 @@ interface EditorState {
 
 	// Drawing over a frozen snapshot instead of the live DOM (see snapshot.ts).
 	snapshotMode: boolean;
+
+	// 縮尺. 1 = 100%. zoom≠1 always renders a snapshot to annotate on.
+	zoom: number;
 }
 
 export const state: EditorState = {
@@ -67,6 +77,7 @@ export const state: EditorState = {
 	recording: false,
 	pickerKind: null,
 	snapshotMode: false,
+	zoom: 1,
 };
 
 export const allocateAnnotationId = (): string => `a${state.nextId++}`;

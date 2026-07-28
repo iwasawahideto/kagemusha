@@ -46,9 +46,7 @@ export const authContextOptions = (
 		? { storageState: getAuthStatePath(projectRoot) }
 		: {};
 
-// Standard browser.newContext() options used by login / edit / capture so all
-// sessions render at identical viewport + DPR (avoids annotation drift between
-// editor view and captured image).
+// login / edit share one viewport + DPR so annotations don't drift.
 export const defaultContextOptions = (
 	config: KagemushaConfig,
 	projectRoot: string | undefined,

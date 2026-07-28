@@ -1,9 +1,111 @@
 import { describe, expect, it } from "bun:test";
 import type { Page } from "playwright-core";
-import type { CaptureAction } from "../types.js";
-import { executeActions, resolveUrl } from "./screenshot.js";
+import type { CaptureAction, KagemushaConfig } from "../types.js";
+import {
+	cropClip,
+	effectiveRenderParams,
+	executeActions,
+	resolveUrl,
+} from "./screenshot.js";
 
 const BASE = "https://app.example.com";
+
+const mkConfig = (deviceScaleFactor = 2): KagemushaConfig => ({
+	app: { baseUrl: BASE },
+	screenshot: {
+		defaultViewport: { width: 1440, height: 900, deviceScaleFactor },
+		defaultDiffThreshold: 0.005,
+	},
+});
+
+describe("effectiveRenderParams", () => {
+	it("no zoom → config viewport + DPR unchanged", () => {
+		expect(effectiveRenderParams(mkConfig(), {})).toEqual({
+			zoom: 1,
+			viewport: { width: 1440, height: 900 },
+			deviceScaleFactor: 2,
+		});
+	});
+
+	it("zoom shrinks viewport by 1/z and scales DPR by z (real browser zoom)", () => {
+		expect(effectiveRenderParams(mkConfig(), { zoom: 0.9 })).toEqual({
+			zoom: 0.9,
+			viewport: { width: 1600, height: 1000 },
+			deviceScaleFactor: 1.8,
+		});
+		expect(effectiveRenderParams(mkConfig(), { zoom: 0.5 })).toEqual({
+			zoom: 0.5,
+			viewport: { width: 2880, height: 1800 },
+			deviceScaleFactor: 1,
+		});
+	});
+
+	it("output device dimensions stay constant across zoom (ladder values)", () => {
+		for (const zoom of [1, 0.9, 0.75, 0.5]) {
+			const p = effectiveRenderParams(mkConfig(), { zoom });
+			expect(p.viewport.width * p.deviceScaleFactor).toBeCloseTo(1440 * 2, 5);
+			expect(p.viewport.height * p.deviceScaleFactor).toBeCloseTo(900 * 2, 5);
+		}
+	});
+
+	it("uses def.viewport as the base when present", () => {
+		expect(
+			effectiveRenderParams(mkConfig(), {
+				viewport: { width: 800, height: 600 },
+			}),
+		).toEqual({
+			zoom: 1,
+			viewport: { width: 800, height: 600 },
+			deviceScaleFactor: 2,
+		});
+	});
+
+	it("DPR comes from config, never def.viewport (avoids annotation drift)", () => {
+		const p = effectiveRenderParams(mkConfig(2), {
+			viewport: { width: 800, height: 600, deviceScaleFactor: 5 },
+		});
+		expect(p.deviceScaleFactor).toBe(2);
+	});
+
+	it("zoomOverride wins over def.zoom", () => {
+		expect(
+			effectiveRenderParams(mkConfig(), { zoom: 0.5 }, 1).viewport,
+		).toEqual({
+			width: 1440,
+			height: 900,
+		});
+	});
+});
+
+describe("cropClip", () => {
+	const crop = { start: { x: 100, y: 50 }, end: { x: 400, y: 250 } };
+
+	it("zoom=1 keeps the stored CSS px", () => {
+		expect(cropClip(crop, 1)).toEqual({
+			x: 100,
+			y: 50,
+			width: 300,
+			height: 200,
+		});
+	});
+
+	it("divides by zoom so the clip lands on the same content", () => {
+		expect(cropClip(crop, 0.5)).toEqual({
+			x: 200,
+			y: 100,
+			width: 600,
+			height: 400,
+		});
+	});
+
+	it("crop device size is zoom-invariant (÷zoom × DPR×zoom cancels)", () => {
+		const baseDpr = 2;
+		for (const zoom of [1, 0.9, 0.75, 0.5]) {
+			const clip = cropClip(crop, zoom);
+			expect(clip.width * (baseDpr * zoom)).toBeCloseTo(300 * baseDpr, 5);
+		}
+	});
+});
 
 describe("resolveUrl", () => {
 	it("joins an absolute path against baseUrl", () => {

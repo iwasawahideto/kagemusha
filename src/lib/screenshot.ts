@@ -6,12 +6,13 @@ import type {
 	ScreenshotDefinition,
 } from "../types.js";
 import { drawAnnotations } from "./annotate.js";
-import { defaultContextOptions } from "./auth.js";
+import { authContextOptions } from "./auth.js";
 import { getOutputDir } from "./output-dir.js";
 import { waitForPageReady } from "./page-ready.js";
 import { launchOptionsFor } from "./playwright-launch.js";
 
 type Page = import("playwright-core").Page;
+type Browser = import("playwright-core").Browser;
 type BrowserContext = import("playwright-core").BrowserContext;
 
 const loadPlaywright = async () => {
@@ -29,12 +30,54 @@ export interface CaptureFailure {
 	reason: string;
 }
 
-// Runs `fn` with a fresh headless browser + context, closing both afterward.
-// Shared by capture (many defs) and the editor snapshot render (one def).
-const withHeadlessContext = async <T>(
+// Zoom is applied by transforming the render context: viewport → base/zoom,
+// DPR → baseDPR×zoom (Playwright has no zoom API). baseDPR is the config DPR
+// (not def.viewport's): the editor renders + stores annotations at that DPR, so
+// capture must match it or annotations drift.
+export const effectiveRenderParams = (
 	config: KagemushaConfig,
-	projectRoot: string,
-	fn: (context: BrowserContext) => Promise<T>,
+	def: Pick<ScreenshotDefinition, "viewport" | "zoom">,
+	zoomOverride?: number,
+): {
+	zoom: number;
+	viewport: { width: number; height: number };
+	deviceScaleFactor: number;
+} => {
+	const base = def.viewport ?? config.screenshot.defaultViewport;
+	const baseDpr = config.screenshot.defaultViewport.deviceScaleFactor ?? 2;
+	const zoom = zoomOverride ?? def.zoom ?? 1;
+	return {
+		zoom,
+		viewport: {
+			width: Math.round(base.width / zoom),
+			height: Math.round(base.height / zoom),
+		},
+		deviceScaleFactor: baseDpr * zoom,
+	};
+};
+
+const contextOptionsForZoom = (
+	config: KagemushaConfig,
+	projectRoot: string | undefined,
+	def: Pick<ScreenshotDefinition, "viewport" | "zoom">,
+	zoomOverride?: number,
+) => {
+	const { viewport, deviceScaleFactor } = effectiveRenderParams(
+		config,
+		def,
+		zoomOverride,
+	);
+	return {
+		baseURL: config.app.baseUrl,
+		viewport,
+		deviceScaleFactor,
+		...authContextOptions(projectRoot),
+	};
+};
+
+// Callers make their own contexts: deviceScaleFactor (= zoom) is context-level.
+const withHeadlessBrowser = async <T>(
+	fn: (browser: Browser) => Promise<T>,
 ): Promise<T> => {
 	const { chromium } = await loadPlaywright();
 	const browser = await chromium.launch({
@@ -42,14 +85,7 @@ const withHeadlessContext = async <T>(
 		...launchOptionsFor(),
 	});
 	try {
-		const context = await browser.newContext(
-			defaultContextOptions(config, projectRoot),
-		);
-		try {
-			return await fn(context);
-		} finally {
-			await context.close();
-		}
+		return await fn(browser);
 	} finally {
 		await browser.close();
 	}
@@ -65,15 +101,36 @@ export const captureScreenshots = async (
 	fs.mkdirSync(outputDir, { recursive: true });
 
 	const failures: CaptureFailure[] = [];
-	await withHeadlessContext(config, projectRoot, async (context) => {
-		for (const def of definitions) {
-			try {
-				await captureOne(context, config, def, outputDir);
-			} catch (e) {
-				const reason = e instanceof Error ? e.message : String(e);
-				failures.push({ id: def.id, reason });
-				console.error(`  ⚠ ${def.id}: ${reason}`);
+	// Group by effective DPR (stable sort) so mixed-zoom sets open one context
+	// per DPR instead of re-creating it on every change in definition order.
+	const ordered = [...definitions].sort(
+		(a, b) =>
+			effectiveRenderParams(config, a).deviceScaleFactor -
+			effectiveRenderParams(config, b).deviceScaleFactor,
+	);
+	await withHeadlessBrowser(async (browser) => {
+		let context: BrowserContext | null = null;
+		let currentDsf: number | null = null;
+		try {
+			for (const def of ordered) {
+				const dsf = effectiveRenderParams(config, def).deviceScaleFactor;
+				if (!context || dsf !== currentDsf) {
+					if (context) await context.close();
+					context = await browser.newContext(
+						contextOptionsForZoom(config, projectRoot, def),
+					);
+					currentDsf = dsf;
+				}
+				try {
+					await captureOne(context, config, def, outputDir);
+				} catch (e) {
+					const reason = e instanceof Error ? e.message : String(e);
+					failures.push({ id: def.id, reason });
+					console.error(`  ⚠ ${def.id}: ${reason}`);
+				}
 			}
+		} finally {
+			if (context) await context.close();
 		}
 	});
 	return failures;
@@ -88,14 +145,11 @@ const openPreparedPage = async (
 	def: ScreenshotDefinition,
 	steps: CaptureAction[] | undefined,
 	replayOpts: ReplayOptions = {},
+	zoomOverride?: number,
 ): Promise<Page> => {
 	const page = await context.newPage();
-	if (def.viewport) {
-		await page.setViewportSize({
-			width: def.viewport.width,
-			height: def.viewport.height,
-		});
-	}
+	const { viewport } = effectiveRenderParams(config, def, zoomOverride);
+	await page.setViewportSize(viewport);
 	const url = resolveUrl(config.app.baseUrl, def.url, def.urlParams);
 	await page.goto(url, { waitUntil: "load", timeout: 60000 });
 	await waitForPageReady(page);
@@ -114,8 +168,9 @@ const captureOne = async (
 	def: ScreenshotDefinition,
 	outputDir: string,
 ): Promise<void> => {
+	const { zoom } = effectiveRenderParams(config, def);
 	const page = await openPreparedPage(context, config, def, def.beforeCapture);
-	const buffer = await takeScreenshotBuffer(page, def);
+	const buffer = await takeScreenshotBuffer(page, def, zoom);
 	await page.close();
 
 	const finalPath = path.join(outputDir, `${def.id}.png`);
@@ -127,25 +182,29 @@ const captureOne = async (
 	}
 };
 
+// crop is stored in base-viewport CSS px; the capture viewport is base/zoom, so
+// the clip is divided by zoom to land on the same content.
+export const cropClip = (
+	crop: { start: { x: number; y: number }; end: { x: number; y: number } },
+	zoom: number,
+): { x: number; y: number; width: number; height: number } => ({
+	x: crop.start.x / zoom,
+	y: crop.start.y / zoom,
+	width: (crop.end.x - crop.start.x) / zoom,
+	height: (crop.end.y - crop.start.y) / zoom,
+});
+
 const takeScreenshotBuffer = async (
 	page: Page,
 	def: ScreenshotDefinition,
+	zoom = 1,
 ): Promise<Buffer> => {
 	switch (def.capture.mode) {
 		case "fullPage":
 			return await page.screenshot({ fullPage: true });
 
-		case "crop": {
-			const { start, end } = def.capture.crop;
-			return await page.screenshot({
-				clip: {
-					x: start.x,
-					y: start.y,
-					width: end.x - start.x,
-					height: end.y - start.y,
-				},
-			});
-		}
+		case "crop":
+			return await page.screenshot({ clip: cropClip(def.capture.crop, zoom) });
 
 		default:
 			console.warn(
@@ -282,23 +341,64 @@ const hideElements = async (page: Page, selectors: string[]): Promise<void> => {
 	}
 };
 
-// Renders `def` after replaying `steps`, headlessly, and returns a fullPage PNG
-// — the editor's annotation backdrop. Headless is required: a headed browser
-// drops :hover before the screenshot.
-export const renderSnapshot = async (
+// Headless is required: a headed browser drops :hover before the screenshot.
+const renderSnapshotBuffer = async (
+	browser: Browser,
 	config: KagemushaConfig,
+	projectRoot: string,
 	def: ScreenshotDefinition,
 	steps: CaptureAction[],
-	projectRoot: string,
-): Promise<Buffer> =>
-	withHeadlessContext(config, projectRoot, async (context) => {
+	zoom: number,
+): Promise<Buffer> => {
+	const context = await browser.newContext(
+		contextOptionsForZoom(config, projectRoot, def, zoom),
+	);
+	try {
 		// Soft: skipping a failed item-select leaves the menu open to annotate.
-		const page = await openPreparedPage(context, config, def, steps, {
-			soft: true,
-			timeout: 5000,
-		});
-		return page.screenshot({ fullPage: true });
+		const page = await openPreparedPage(
+			context,
+			config,
+			def,
+			steps,
+			{ soft: true, timeout: 5000 },
+			zoom,
+		);
+		return await page.screenshot({ fullPage: true });
+	} finally {
+		await context.close();
+	}
+};
+
+export interface SnapshotRenderer {
+	render: (
+		def: ScreenshotDefinition,
+		steps: CaptureAction[],
+		zoom?: number,
+	) => Promise<Buffer>;
+	close: () => Promise<void>;
+}
+
+// One long-lived browser reused across renders (skips per-render Chrome launch).
+export const createSnapshotRenderer = async (
+	config: KagemushaConfig,
+	projectRoot: string,
+): Promise<SnapshotRenderer> => {
+	const { chromium } = await loadPlaywright();
+	const browser = await chromium.launch({
+		headless: true,
+		...launchOptionsFor(),
 	});
+	// Absorb the fresh-Chrome first-page cost (~1.5s) here, not on the first render.
+	await browser
+		.newPage()
+		.then((p) => p.close())
+		.catch(() => {});
+	return {
+		render: (def, steps, zoom = 1) =>
+			renderSnapshotBuffer(browser, config, projectRoot, def, steps, zoom),
+		close: () => browser.close(),
+	};
+};
 
 // Exported so `capture` can compute the page URL for `summary.json` /
 // notifications without re-implementing the {param} substitution + baseUrl
