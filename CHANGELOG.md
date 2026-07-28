@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.1](https://github.com/iwasawahideto/kagemusha/compare/v0.5.0...v0.5.1) (2026-07-28)
+
+
+### Features
+
+* **editor:** 編集時のズーム(縮尺)を撮影に反映する ([#44](https://github.com/iwasawahideto/kagemusha/issues/44)) ([9b14fcc](https://github.com/iwasawahideto/kagemusha/commit/9b14fcccb5a9af36532a20f5c37893cd3eb85bd7))
+
+
+### Miscellaneous Chores
+
+* release as 0.5.1 ([#47](https://github.com/iwasawahideto/kagemusha/issues/47)) ([c0ea851](https://github.com/iwasawahideto/kagemusha/commit/c0ea851297464c8a688a66ada67dce78ad5678f4))
+
 ## [0.5.0](https://github.com/iwasawahideto/kagemusha/compare/v0.4.0...v0.5.0) (2026-07-21)
 
 
