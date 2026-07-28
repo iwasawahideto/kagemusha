@@ -126,6 +126,12 @@ export function validateDefinition(def: ScreenshotDefinition): string[] {
 	if (def.capture && !["fullPage", "crop"].includes(def.capture.mode)) {
 		errors.push(`capture.mode must be "fullPage" or "crop"`);
 	}
+	if (
+		def.zoom !== undefined &&
+		(typeof def.zoom !== "number" || def.zoom <= 0 || def.zoom > 2)
+	) {
+		errors.push("zoom must be a number in (0, 2]");
+	}
 
 	return errors;
 }
