@@ -41,6 +41,8 @@ const TOOLBAR_HTML = `
     #kagemusha-toolbar button.active { background: #6366f1; border-color: #6366f1; }
     #kagemusha-toolbar button.cap-btn.active { background: #0ea5e9; border-color: #0ea5e9; }
     #kagemusha-toolbar button#kg-record.active { background: #ef4444; border-color: #ef4444; }
+    #kagemusha-toolbar button#kg-zoom-level { min-width: 52px; }
+    #kagemusha-toolbar button#kg-zoom-level.zoomed { background: #6366f1; border-color: #6366f1; }
     #kagemusha-toolbar button.picking {
       background: #0ea5e9; border-color: #0ea5e9; color: #fff;
       box-shadow: 0 0 0 2px rgba(14,165,233,0.4);
@@ -95,6 +97,11 @@ const TOOLBAR_HTML = `
   <span class="group-label">Capture</span>
   <button id="kg-cap-full" class="cap-btn active">📷 Full</button>
   <button id="kg-cap-crop" class="cap-btn">✂️ Crop</button>
+  <div class="sep"></div>
+  <span class="group-label">Zoom</span>
+  <button id="kg-zoom-out" title="Zoom out (⌘-)">−</button>
+  <button id="kg-zoom-level" title="Reset to 100% (⌘0)">100%</button>
+  <button id="kg-zoom-in" title="Zoom in (⌘+)">+</button>
   <div class="sep"></div>
   <span class="group-label">Annotate</span>
   <button id="kg-tool-rect" class="active">▭ Rect</button>

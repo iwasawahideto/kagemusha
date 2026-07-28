@@ -11,6 +11,7 @@ import { enterSnapshotMode, setSnapshotLoading } from "./snapshot.js";
 import { state } from "./state.js";
 import { setCaptureMode } from "./toolbar.js";
 import type { CaptureAction, CaptureSpec, Decoration } from "./types.js";
+import { loadZoom, serializeZoom } from "./zoom.js";
 
 declare global {
 	interface Window {
@@ -18,9 +19,11 @@ declare global {
 		__kagemusha_loadAnnotations: (decorations: Decoration[]) => void;
 		__kagemusha_loadCapture: (capture: CaptureSpec) => void;
 		__kagemusha_loadSteps: (steps: CaptureAction[]) => void;
+		__kagemusha_loadZoom: (zoom: number) => void;
 		__kagemusha_enterSnapshotMode: (dataUrl: string) => void;
 		__kagemusha_snapshotLoading: (on: boolean) => void;
 		__kagemusha_replay?: (stepsJson: string) => Promise<void>;
+		__kagemusha_setZoom: (payloadJson: string) => Promise<void>;
 	}
 }
 
@@ -35,9 +38,10 @@ const save = (): void => {
 	const decorations = serializeAnnotations();
 	const capture = serializeCapture();
 	const beforeCapture = serializeSteps();
+	const zoom = serializeZoom();
 
 	window.__kagemusha_save(
-		JSON.stringify({ decorations, capture, beforeCapture }),
+		JSON.stringify({ decorations, capture, beforeCapture, zoom }),
 	);
 };
 
@@ -50,6 +54,9 @@ export const initBridge = (): { save: () => void } => {
 	};
 	window.__kagemusha_loadSteps = (steps: CaptureAction[]) => {
 		loadSteps(steps);
+	};
+	window.__kagemusha_loadZoom = (zoom: number) => {
+		loadZoom(zoom);
 	};
 	window.__kagemusha_enterSnapshotMode = (dataUrl: string) => {
 		enterSnapshotMode(dataUrl);
