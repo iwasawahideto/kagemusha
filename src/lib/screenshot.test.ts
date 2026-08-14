@@ -1,11 +1,18 @@
 import { describe, expect, it } from "bun:test";
 import type { Page } from "playwright-core";
-import type { CaptureAction, KagemushaConfig } from "../types.js";
+import type {
+	CaptureAction,
+	KagemushaConfig,
+	ScreenshotDefinition,
+} from "../types.js";
 import {
 	cropClip,
 	effectiveRenderParams,
 	executeActions,
+	openPreparedPage,
 	resolveUrl,
+	scrollTargetY,
+	takeScreenshotBuffer,
 } from "./screenshot.js";
 
 const BASE = "https://app.example.com";
@@ -107,6 +114,84 @@ describe("cropClip", () => {
 	});
 });
 
+describe("scrollTargetY", () => {
+	it("zoom=1 keeps the stored CSS px", () => {
+		expect(scrollTargetY(800, 1)).toBe(800);
+	});
+
+	it("divides by zoom so the viewport lands on the same content", () => {
+		// At zoom 0.5 the viewport is 2x taller in CSS px, so the same content
+		// sits at half the scroll offset.
+		expect(scrollTargetY(800, 0.5)).toBe(1600);
+		expect(scrollTargetY(900, 1.5)).toBe(600);
+	});
+
+	it("device-pixel offset is zoom-invariant (÷zoom × DPR×zoom cancels)", () => {
+		const baseDpr = 2;
+		for (const zoom of [1, 0.9, 0.75, 0.5]) {
+			expect(scrollTargetY(800, zoom) * (baseDpr * zoom)).toBeCloseTo(
+				800 * baseDpr,
+				5,
+			);
+		}
+	});
+});
+
+describe("takeScreenshotBuffer", () => {
+	const mkPage = () => {
+		const shots: Record<string, unknown>[] = [];
+		const page = {
+			screenshot: async (opts: Record<string, unknown>) => {
+				shots.push(opts);
+				return Buffer.alloc(0);
+			},
+		};
+		return { page: page as unknown as Page, shots };
+	};
+
+	const mkDef = (capture: ScreenshotDefinition["capture"]) =>
+		({ id: "d", name: "d", url: "/d", capture }) as ScreenshotDefinition;
+
+	it("fullPage mode screenshots the whole document, unclipped", async () => {
+		const { page, shots } = mkPage();
+		await takeScreenshotBuffer(page, mkDef({ mode: "fullPage" }));
+		expect(shots[0]).toEqual({ fullPage: true });
+	});
+
+	it("crop mode clips with fullPage so the clip is document-relative", async () => {
+		const { page, shots } = mkPage();
+		await takeScreenshotBuffer(
+			page,
+			mkDef({
+				mode: "crop",
+				crop: { start: { x: 100, y: 1200 }, end: { x: 400, y: 1400 } },
+			}),
+		);
+		// Without fullPage, Playwright would read the clip as viewport-relative
+		// and a scrolled page would crop the wrong band.
+		expect(shots[0]).toEqual({
+			fullPage: true,
+			clip: { x: 100, y: 1200, width: 300, height: 200 },
+		});
+	});
+
+	it("crop mode divides the clip by zoom", async () => {
+		const { page, shots } = mkPage();
+		await takeScreenshotBuffer(
+			page,
+			mkDef({
+				mode: "crop",
+				crop: { start: { x: 100, y: 1200 }, end: { x: 400, y: 1400 } },
+			}),
+			0.5,
+		);
+		expect(shots[0]).toEqual({
+			fullPage: true,
+			clip: { x: 200, y: 2400, width: 600, height: 400 },
+		});
+	});
+});
+
 describe("resolveUrl", () => {
 	it("joins an absolute path against baseUrl", () => {
 		expect(resolveUrl(BASE, "/dashboard")).toBe(
@@ -177,10 +262,25 @@ const makeFakePage = (cfg: FakePageConfig = {}) => {
 		selectOption: async (sel: string) => {
 			calls.push(`select:${sel}`);
 		},
+		evaluate: async (_fn: unknown, arg?: unknown) => {
+			calls.push(`evaluate:${String(arg)}`);
+		},
+		setViewportSize: async (v: { width: number; height: number }) => {
+			calls.push(`viewport:${v.width}x${v.height}`);
+		},
+		goto: async (url: string) => {
+			calls.push(`goto:${url}`);
+		},
+		waitForLoadState: async () => {
+			calls.push("loadState");
+		},
 		locator: (sel: string) => {
 			const vis = cfg.visible?.[sel] ?? [true];
 			return {
 				count: async () => vis.length,
+				evaluate: async (_fn: unknown, arg?: unknown) => {
+					calls.push(`loc.evaluate:${sel}:${String(arg)}`);
+				},
 				nth: (i: number) => ({
 					isVisible: async () => vis[i],
 					click: async (o?: { timeout?: number }) => {
@@ -260,5 +360,96 @@ describe("executeActions (soft replay)", () => {
 		});
 		await executeActions(page, [{ action: "click", selector: 'text="x"' }]);
 		expect(calls).toContain('loc.click:text="x"#1:');
+	});
+
+	it("scroll action: base CSS px by default (zoom=1)", async () => {
+		const { page, calls } = makeFakePage();
+		await executeActions(page, [{ action: "scroll", y: 800 }]);
+		expect(calls).toEqual(["evaluate:800"]);
+	});
+
+	it("scroll action: divided by the render zoom", async () => {
+		const { page, calls } = makeFakePage();
+		await executeActions(page, [{ action: "scroll", y: 800 }], { zoom: 0.5 });
+		expect(calls).toEqual(["evaluate:1600"]);
+	});
+
+	it("scroll action on a selector is zoom-corrected too", async () => {
+		const { page, calls } = makeFakePage();
+		await executeActions(
+			page,
+			[{ action: "scroll", selector: ".pane", y: 300 }],
+			{
+				zoom: 1.5,
+			},
+		);
+		expect(calls).toEqual(["loc.evaluate:.pane:200"]);
+	});
+});
+
+describe("openPreparedPage (scroll application)", () => {
+	const mkDef = (
+		over: Partial<ScreenshotDefinition> = {},
+	): ScreenshotDefinition =>
+		({
+			id: "d",
+			name: "d",
+			url: "/d",
+			capture: { mode: "fullPage" },
+			...over,
+		}) as ScreenshotDefinition;
+
+	const open = async (
+		def: ScreenshotDefinition,
+		overrides?: { zoom?: number; scrollY?: number },
+	) => {
+		const { page, calls } = makeFakePage();
+		const context = {
+			newPage: async () => page,
+		} as unknown as Parameters<typeof openPreparedPage>[0];
+		await openPreparedPage(
+			context,
+			mkConfig(),
+			def,
+			def.beforeCapture,
+			{},
+			overrides,
+		);
+		return calls;
+	};
+
+	it("no scrollY → never scrolls", async () => {
+		expect(await open(mkDef())).not.toContain("evaluate:0");
+	});
+
+	it("def.scrollY is applied as-is at zoom 1", async () => {
+		expect(await open(mkDef({ scrollY: 640 }))).toContain("evaluate:640");
+	});
+
+	it("def.scrollY is divided by def.zoom", async () => {
+		expect(await open(mkDef({ scrollY: 640, zoom: 0.8 }))).toContain(
+			"evaluate:800",
+		);
+	});
+
+	it("overrides win over the definition (editor drives live values)", async () => {
+		const calls = await open(mkDef({ scrollY: 640, zoom: 0.8 }), {
+			zoom: 1,
+			scrollY: 200,
+		});
+		expect(calls).toContain("evaluate:200");
+		expect(calls).not.toContain("evaluate:800");
+	});
+
+	it("scrolls after replaying beforeCapture, not before", async () => {
+		const calls = await open(
+			mkDef({
+				scrollY: 640,
+				beforeCapture: [{ action: "click", selector: "a" }],
+			}),
+		);
+		expect(calls.indexOf("loc.click:a#0:")).toBeLessThan(
+			calls.indexOf("evaluate:640"),
+		);
 	});
 });
