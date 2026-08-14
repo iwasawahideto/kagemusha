@@ -7,6 +7,7 @@ import { loadAnnotations, serializeAnnotations } from "./annotations.js";
 import { loadCapture, serializeCapture } from "./crop.js";
 import { showErrorToast } from "./dom.js";
 import { loadSteps, serializeSteps } from "./record.js";
+import { loadScroll, restoreScroll, serializeScroll } from "./scroll.js";
 import { enterSnapshotMode, setSnapshotLoading } from "./snapshot.js";
 import { state } from "./state.js";
 import { setCaptureMode } from "./toolbar.js";
@@ -20,10 +21,10 @@ declare global {
 		__kagemusha_loadCapture: (capture: CaptureSpec) => void;
 		__kagemusha_loadSteps: (steps: CaptureAction[]) => void;
 		__kagemusha_loadZoom: (zoom: number) => void;
+		__kagemusha_loadScroll: (scrollY: number) => void;
 		__kagemusha_enterSnapshotMode: (dataUrl: string) => void;
 		__kagemusha_snapshotLoading: (on: boolean) => void;
-		__kagemusha_replay?: (stepsJson: string) => Promise<void>;
-		__kagemusha_setZoom: (payloadJson: string) => Promise<void>;
+		__kagemusha_render: (payloadJson: string) => Promise<void>;
 	}
 }
 
@@ -39,9 +40,10 @@ const save = (): void => {
 	const capture = serializeCapture();
 	const beforeCapture = serializeSteps();
 	const zoom = serializeZoom();
+	const scrollY = serializeScroll();
 
 	window.__kagemusha_save(
-		JSON.stringify({ decorations, capture, beforeCapture, zoom }),
+		JSON.stringify({ decorations, capture, beforeCapture, zoom, scrollY }),
 	);
 };
 
@@ -58,8 +60,12 @@ export const initBridge = (): { save: () => void } => {
 	window.__kagemusha_loadZoom = (zoom: number) => {
 		loadZoom(zoom);
 	};
+	window.__kagemusha_loadScroll = (scrollY: number) => {
+		loadScroll(scrollY);
+	};
 	window.__kagemusha_enterSnapshotMode = (dataUrl: string) => {
-		enterSnapshotMode(dataUrl);
+		// Wired here (not inside snapshot.ts) to keep scroll ↔ snapshot acyclic.
+		enterSnapshotMode(dataUrl, restoreScroll);
 	};
 	window.__kagemusha_snapshotLoading = (on: boolean) => {
 		setSnapshotLoading(on);

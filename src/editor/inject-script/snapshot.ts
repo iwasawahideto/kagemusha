@@ -34,7 +34,10 @@ export const setSnapshotLoading = (on: boolean): void => {
 	document.documentElement.appendChild(el);
 };
 
-export const enterSnapshotMode = (dataUrl: string): void => {
+export const enterSnapshotMode = (
+	dataUrl: string,
+	onReady?: () => void,
+): void => {
 	state.snapshotMode = true;
 	document.documentElement.style.overflow = "";
 
@@ -57,6 +60,8 @@ export const enterSnapshotMode = (dataUrl: string): void => {
 		svg.setAttribute("width", String(w));
 		svg.setAttribute("height", String(h));
 		setSnapshotLoading(false);
+		// The document is only now as tall as the image — safe to restore scroll.
+		onReady?.();
 	};
 	el.setAttribute(
 		"style",

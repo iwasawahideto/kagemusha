@@ -33,6 +33,9 @@ const isOwnUi = (el: EventTarget | null): boolean => {
 };
 
 let svgRef: SVGElement | null = null;
+// Injected by index.ts — record.ts must not import the render module, which
+// already imports serializeSteps from here.
+let onStop: () => void = () => {};
 let panelEl: HTMLDivElement | null = null;
 let pickerOutlineEl: HTMLDivElement | null = null;
 let panelOpen = false;
@@ -185,9 +188,11 @@ const setRecording = (on: boolean): void => {
 	}
 	updateToolbarLockState();
 	renderPanel();
-	// Stop with steps → render the snapshot (fire-and-forget; reply via enterSnapshotMode).
+	// Stop with steps → render the snapshot (fire-and-forget; reply via
+	// enterSnapshotMode). Goes through the shared render channel so the current
+	// zoom / scroll survive the replay.
 	if (!on && state.recordedSteps.length > 0) {
-		void window.__kagemusha_replay?.(JSON.stringify(state.recordedSteps));
+		onStop();
 	}
 };
 
@@ -386,8 +391,12 @@ const promptForWaitMs = (): void => {
 
 // --- Init ---
 
-export const initRecord = (svg: SVGElement): void => {
+export const initRecord = (
+	svg: SVGElement,
+	onStopRecording: () => void,
+): void => {
 	svgRef = svg;
+	onStop = onStopRecording;
 	ensurePanel();
 
 	document

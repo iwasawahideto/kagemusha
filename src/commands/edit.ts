@@ -13,6 +13,7 @@ import { waitForPageReady } from "../lib/page-ready.js";
 import { launchOptionsFor } from "../lib/playwright-launch.js";
 import {
 	createSnapshotRenderer,
+	type RenderOverrides,
 	type SnapshotRenderer,
 } from "../lib/screenshot.js";
 import type { CaptureAction, ScreenshotDefinition } from "../types.js";
@@ -141,13 +142,13 @@ export const editCommand = async (options: EditOptions): Promise<void> => {
 
 	const showSnapshot = async (
 		steps: CaptureAction[],
-		zoom = 1,
+		overrides: RenderOverrides = {},
 	): Promise<void> => {
 		// Veil during the render; enterSnapshotMode drops it once the image lands.
 		await setLoading(true);
 		try {
 			const r = await getRenderer();
-			const buffer = await r.render(def, steps, zoom);
+			const buffer = await r.render(def, steps, overrides);
 			const dataUrl = `data:image/png;base64,${buffer.toString("base64")}`;
 			await page.evaluate((url) => {
 				(
@@ -176,6 +177,7 @@ export const editCommand = async (options: EditOptions): Promise<void> => {
 			capture: ScreenshotDefinition["capture"];
 			beforeCapture?: CaptureAction[];
 			zoom?: number;
+			scrollY?: number;
 		};
 		savedCount = payload.decorations?.length ?? 0;
 		const allDefs = loadDefinitions(projectRoot);
@@ -194,49 +196,39 @@ export const editCommand = async (options: EditOptions): Promise<void> => {
 						: undefined,
 				// Drop the default so unzoomed defs stay unchanged in json.
 				zoom: payload.zoom && payload.zoom !== 1 ? payload.zoom : undefined,
+				// Same: unscrolled defs keep no scrollY field at all.
+				scrollY: payload.scrollY ? payload.scrollY : undefined,
 			};
 		}
 		saveDefinitions(allDefs, projectRoot);
 		saveResolve();
 	});
 
-	// Record → Stop sends the recorded steps here to render the snapshot.
-	await page.exposeFunction("__kagemusha_replay", async (stepsJson: string) => {
-		try {
-			const steps = JSON.parse(stepsJson) as CaptureAction[];
-			console.log(
-				chalk.blue("📸 Rendering the replayed state (headless snapshot)..."),
-			);
-			await showSnapshot(steps);
-			console.log(
-				chalk.blue("🎨 Snapshot ready — draw annotations, then click Save.\n"),
-			);
-		} catch (e) {
-			const reason = e instanceof Error ? e.message : String(e);
-			console.log(chalk.yellow(`⚠ Snapshot render failed: ${reason}`));
-			console.log(
-				chalk.gray(
-					"  You can still draw on the live page, or fix the step and Record again.",
-				),
-			);
-		}
-	});
-
+	// The single re-render channel: zoom, scroll and Record → Stop all land here
+	// with the full render params, so one of them can never drop another's value.
 	await page.exposeFunction(
-		"__kagemusha_setZoom",
+		"__kagemusha_render",
 		async (payloadJson: string) => {
 			try {
-				const { zoom, steps } = JSON.parse(payloadJson) as {
+				const { zoom, scrollY, steps } = JSON.parse(payloadJson) as {
 					zoom: number;
+					scrollY: number;
 					steps: CaptureAction[];
 				};
 				console.log(
-					chalk.blue(`🔍 Rendering at ${Math.round(zoom * 100)}%...`),
+					chalk.blue(
+						`📸 Rendering snapshot — ${Math.round(zoom * 100)}%, scrollY ${Math.round(scrollY)}, ${steps.length} step(s)...`,
+					),
 				);
-				await showSnapshot(steps, zoom);
+				await showSnapshot(steps, { zoom, scrollY });
 			} catch (e) {
 				const reason = e instanceof Error ? e.message : String(e);
-				console.log(chalk.yellow(`⚠ Zoom render failed: ${reason}`));
+				console.log(chalk.yellow(`⚠ Snapshot render failed: ${reason}`));
+				console.log(
+					chalk.gray(
+						"  You can still draw on the live page, or fix the step and Record again.",
+					),
+				);
 			}
 		},
 	);
@@ -277,18 +269,28 @@ export const editCommand = async (options: EditOptions): Promise<void> => {
 	}, def.beforeCapture ?? []);
 
 	const initialZoom = def.zoom ?? 1;
-	await page.evaluate((z) => {
-		(
-			window as unknown as {
+	const initialScrollY = def.scrollY ?? 0;
+	await page.evaluate(
+		({ z, y }) => {
+			const w = window as unknown as {
 				__kagemusha_loadZoom: (zoom: number) => void;
-			}
-		).__kagemusha_loadZoom(z);
-	}, initialZoom);
+				__kagemusha_loadScroll: (scrollY: number) => void;
+			};
+			w.__kagemusha_loadZoom(z);
+			w.__kagemusha_loadScroll(y);
+		},
+		{ z: initialZoom, y: initialScrollY },
+	);
 
-	if (def.beforeCapture?.length || initialZoom !== 1) {
+	// scrollY≠0 is only expressible over a snapshot (the live DOM can't scroll),
+	// so it forces the initial render just like zoom≠1 does.
+	if (def.beforeCapture?.length || initialZoom !== 1 || initialScrollY !== 0) {
 		try {
 			console.log(chalk.blue("📸 Rendering initial snapshot..."));
-			await showSnapshot(def.beforeCapture ?? [], initialZoom);
+			await showSnapshot(def.beforeCapture ?? [], {
+				zoom: initialZoom,
+				scrollY: initialScrollY,
+			});
 		} catch (e) {
 			const reason = e instanceof Error ? e.message : String(e);
 			console.log(chalk.yellow(`⚠ Snapshot render failed: ${reason}`));
