@@ -34,22 +34,66 @@ const SCROLLABLE_OVERFLOW = ["auto", "scroll", "overlay"];
 
 const EDITOR_LAYERS = `${OWN_UI}, #kagemusha-svg-layer, #kagemusha-snapshot, .kagemusha-prompt, .kagemusha-picker-outline`;
 
+const isScrollable = (el: Element): boolean => {
+	const { overflowY, visibility } = window.getComputedStyle(el);
+	return (
+		visibility !== "hidden" &&
+		SCROLLABLE_OVERFLOW.includes(overflowY) &&
+		el.scrollHeight > el.clientHeight
+	);
+};
+
+const containsPoint = (rect: DOMRect, x: number, y: number): boolean =>
+	x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+
 // Apps that scroll an inner container instead of the document (body:overflow
 // hidden SPAs) must keep scrolling it — a snapshot render would fight that and
 // snap it back. The editor's own layers are skipped: the SVG overlay is on top
 // of every point, and it's the page underneath that scrolls.
-const scrollableUnderPointer = (x: number, y: number): Element | null => {
+const hitTestScrollable = (x: number, y: number): Element | null => {
 	for (const el of document.elementsFromPoint(x, y)) {
 		if (el.closest(EDITOR_LAYERS)) continue;
-		const { overflowY } = window.getComputedStyle(el);
-		if (
-			SCROLLABLE_OVERFLOW.includes(overflowY) &&
-			el.scrollHeight > el.clientHeight
-		) {
-			return el;
-		}
+		if (isScrollable(el)) return el;
 	}
 	return null;
+};
+
+// The hit test misses a container the live DOM made unhittable: a modal left
+// open behind the snapshot puts pointer-events:none on everything under it. So
+// fall back to geometry — the innermost scrollable box covering the point.
+const geometricScrollable = (x: number, y: number): Element | null => {
+	let best: Element | null = null;
+	let bestArea = Number.POSITIVE_INFINITY;
+	for (const el of Array.from(document.querySelectorAll("*"))) {
+		const rect = el.getBoundingClientRect();
+		const area = rect.width * rect.height;
+		if (area === 0 || area >= bestArea) continue;
+		if (!containsPoint(rect, x, y)) continue;
+		if (el.closest(EDITOR_LAYERS) || !isScrollable(el)) continue;
+		best = el;
+		bestArea = area;
+	}
+	return best;
+};
+
+// Scanning every element is too slow to repeat per wheel event, so the last
+// geometric hit is reused while the pointer stays inside it — revalidated
+// against the live rect, which moves as the page re-renders.
+let lastGeometricHit: Element | null = null;
+
+const scrollableUnderPointer = (x: number, y: number): Element | null => {
+	const hit = hitTestScrollable(x, y);
+	if (hit) return hit;
+	const cached = lastGeometricHit;
+	if (
+		cached?.isConnected &&
+		containsPoint(cached.getBoundingClientRect(), x, y) &&
+		isScrollable(cached)
+	) {
+		return cached;
+	}
+	lastGeometricHit = geometricScrollable(x, y);
+	return lastGeometricHit;
 };
 
 // A snapshot as tall as the viewport leaves nothing for the window to scroll.
