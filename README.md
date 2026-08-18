@@ -118,11 +118,19 @@ definition. Scroll back to the top with no zoom and no steps and the editor
 returns to the live page.
 
 Apps that scroll an inner container instead of the document (`body { overflow:
-hidden }` SPAs) have no document `scrollY` to save — use **Record** for those.
-Scrolling a container in the editor scrolls it natively (no snapshot switch), and
-while recording it becomes a `{ "action": "scroll", "selector": "…", "y": 800 }`
-step in `beforeCapture` that capture replays. Only where the scroll comes to rest
-is recorded, so scrolling back and forth leaves one step per container.
+hidden }` SPAs) have no document `scrollY` to save. Their scroll position lives in
+`beforeCapture` as a `{ "action": "scroll", "selector": "…", "y": 800 }` step that
+capture replays, and the editor writes it for you — just point at the container
+and scroll:
+
+- On the live page the container scrolls natively (no snapshot switch).
+- Over a snapshot the container can't move (you're looking at an image), so the
+  wheel adds to that container's `scroll` step and re-renders. Scroll back to the
+  top and the step disappears.
+
+Only where the scroll comes to rest is kept, so scrolling back and forth leaves
+one step per container. **Record** captures container scrolls too — reach for it
+when the scroll has to be interleaved with clicks rather than come last.
 
 ## Avoiding loading-state screenshots
 
