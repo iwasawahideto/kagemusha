@@ -12,9 +12,10 @@
 // - The eventual hosted GUI will replace the click/input listeners with
 //   message-bus events but keep the same step shape.
 
-import { computeSelector } from "./selector.js";
+import { computeContainerSelector, computeSelector } from "./selector.js";
 import { exitSnapshotMode } from "./snapshot.js";
 import { state } from "./state.js";
+import { appendScrollStep, type ScrollAction } from "./steps.js";
 import type { CaptureAction } from "./types.js";
 
 // Excluded selectors — any event whose target is inside one of these is
@@ -127,6 +128,8 @@ const renderStepLine = (s: CaptureAction): string => {
 			return `<b>select</b> ${escapeHtml(s.selector)} → "${escapeHtml(s.value)}"${optBadge(s)}`;
 		case "hover":
 			return `<b>hover</b> ${escapeHtml(s.selector)}${optBadge(s)}`;
+		case "scroll":
+			return `<b>scroll</b>${s.selector ? ` ${escapeHtml(s.selector)}` : ""} → ${Math.round(s.y)}px`;
 		case "wait":
 			return `<b>wait</b> ${s.ms}ms`;
 		case "waitForSelector":
@@ -179,10 +182,13 @@ const setRecording = (on: boolean): void => {
 			);
 			if (!ok) return;
 		}
+		discardScrolls();
 		state.recordedSteps = [];
 		state.recording = true;
 	} else {
 		state.recording = false;
+		// A scroll right before Stop is still debouncing — keep it.
+		flushScrolls();
 		cancelPicker();
 	}
 	updateToolbarLockState();
@@ -346,6 +352,54 @@ const onChangeCapture = (e: Event): void => {
 	}
 };
 
+// A scroll gesture fires continuously; only where it comes to rest is a step.
+const SCROLL_DEBOUNCE_MS = 450;
+
+const pendingScrolls = new Map<
+	EventTarget,
+	{ timer: number; step: ScrollAction }
+>();
+
+const commitScroll = (target: EventTarget): void => {
+	const pending = pendingScrolls.get(target);
+	if (!pending) return;
+	window.clearTimeout(pending.timer);
+	pendingScrolls.delete(target);
+	state.recordedSteps = appendScrollStep(state.recordedSteps, pending.step);
+};
+
+const flushScrolls = (): void => {
+	for (const target of [...pendingScrolls.keys()]) commitScroll(target);
+};
+
+const discardScrolls = (): void => {
+	for (const { timer } of pendingScrolls.values()) window.clearTimeout(timer);
+	pendingScrolls.clear();
+};
+
+const scrollStepFor = (target: EventTarget): ScrollAction =>
+	target instanceof Element && target !== document.scrollingElement
+		? {
+				action: "scroll",
+				selector: computeContainerSelector(target).selector,
+				y: target.scrollTop,
+			}
+		: { action: "scroll", y: window.scrollY };
+
+const onScrollCapture = (e: Event): void => {
+	if (!state.recording) return;
+	const target = e.target;
+	if (!target || isOwnUi(target)) return;
+	window.clearTimeout(pendingScrolls.get(target)?.timer);
+	pendingScrolls.set(target, {
+		step: scrollStepFor(target),
+		timer: window.setTimeout(() => {
+			commitScroll(target);
+			renderPanel();
+		}, SCROLL_DEBOUNCE_MS),
+	});
+};
+
 const onKeyDownCapture = (e: KeyboardEvent): void => {
 	if (state.pickerKind && e.key === "Escape") {
 		cancelPicker();
@@ -419,6 +473,11 @@ export const initRecord = (
 	document.addEventListener("change", onChangeCapture, true);
 	document.addEventListener("keydown", onKeyDownCapture, true);
 	document.addEventListener("mousemove", onMouseMoveCapture, true);
+	// scroll doesn't bubble — capture is the only phase that sees inner containers.
+	document.addEventListener("scroll", onScrollCapture, {
+		capture: true,
+		passive: true,
+	});
 
 	// Outside click closes the panel. Use bubble phase so that clicks on the
 	// toggle / inside the panel can suppress this via stopPropagation /

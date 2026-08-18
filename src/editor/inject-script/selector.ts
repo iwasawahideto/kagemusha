@@ -88,6 +88,31 @@ const cssPath = (el: Element): string => {
 	return parts.join(" > ");
 };
 
+// Scroll containers are identified structurally: computeSelector's text= and
+// interactive-ancestor rules would resolve to a child or wrapper that has the
+// text but not the overflow, and scrolling that does nothing.
+export const computeContainerSelector = (el: Element): SelectorResult => {
+	const testId = el.getAttribute("data-testid");
+	if (testId) {
+		return {
+			selector: `[data-testid="${escapeQuotes(testId)}"]`,
+			quality: "good",
+		};
+	}
+	const ariaLabel = el.getAttribute("aria-label");
+	if (ariaLabel) {
+		return {
+			selector: `[aria-label="${escapeQuotes(ariaLabel)}"]`,
+			quality: "good",
+		};
+	}
+	const path = cssPath(el);
+	return {
+		selector: path,
+		quality: path.startsWith("#") ? "good" : "fallback",
+	};
+};
+
 export const computeSelector = (raw: Element): SelectorResult => {
 	// Prefer an interactive ancestor — clicks on icons inside buttons should
 	// select the button.
