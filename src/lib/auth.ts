@@ -5,6 +5,7 @@ import type { KagemushaConfig } from "../types.js";
 const AUTH_STATE_FILE = "auth-state.json";
 const AUTH_META_FILE = "auth-meta.json";
 const KAGEMUSHA_DIR = ".kagemusha";
+const DEFAULT_LOGIN_PATH = "/login";
 // .mjs is preferred (no ambiguity with package.json's "type" field). .js is
 // accepted for projects that already declare "type": "module".
 const DEFAULT_LOGIN_SCRIPTS = ["login.mjs", "login.js"];
@@ -45,6 +46,72 @@ export const authContextOptions = (
 	projectRoot && hasAuthState(projectRoot)
 		? { storageState: getAuthStatePath(projectRoot) }
 		: {};
+
+// Normalizes a login path from auth-meta.json (user-typed, so "login" and
+// "/login/" both happen). Returns null for values that would match every
+// pathname (= "" / "/"), which would flag every page as a login redirect.
+const normalizeLoginPath = (raw: string): string | null => {
+	const withSlash = raw.startsWith("/") ? raw : `/${raw}`;
+	const trimmed = withSlash.replace(/\/+$/, "");
+	return trimmed === "" ? null : trimmed;
+};
+
+// `kagemusha login` records the login path it used. Any read/parse failure
+// falls back to the conventional /login rather than disabling the check.
+export const resolveLoginPath = (projectRoot: string): string => {
+	try {
+		const meta = JSON.parse(
+			fs.readFileSync(getAuthMetaPath(projectRoot), "utf-8"),
+		) as { loginPath?: unknown };
+		if (typeof meta.loginPath !== "string") return DEFAULT_LOGIN_PATH;
+		return normalizeLoginPath(meta.loginPath) ?? DEFAULT_LOGIN_PATH;
+	} catch {
+		return DEFAULT_LOGIN_PATH;
+	}
+};
+
+// Segment-aware so /login matches /login and /login/sso but not /login-help.
+const isUnderLoginPath = (pathname: string, loginPath: string): boolean => {
+	const p = pathname.replace(/\/+$/, "") || "/";
+	return p === loginPath || p.startsWith(`${loginPath}/`);
+};
+
+/**
+ * Did the app bounce us to its login page (or an external IdP)?
+ *
+ * `edit` only reads the saved storageState and never writes it back, so a
+ * missing/expired session silently lands the user on a login form they can't
+ * usefully fill in. Detecting that lets `edit` fail fast instead.
+ *
+ * Biased toward false: a false positive blocks a legitimate edit session,
+ * while a false negative just restores today's behavior.
+ */
+export const isLoginRedirect = (opts: {
+	finalUrl: string; // page.url() after navigation settled
+	defUrl: string; // the definition's resolved URL
+	baseUrl: string; // config.app.baseUrl
+	loginPath: string;
+}): boolean => {
+	let final: URL;
+	let def: URL;
+	let base: URL;
+	try {
+		final = new URL(opts.finalUrl);
+		def = new URL(opts.defUrl);
+		base = new URL(opts.baseUrl);
+	} catch {
+		return false;
+	}
+
+	// Annotating the login screen itself is a legitimate definition.
+	if (isUnderLoginPath(def.pathname, opts.loginPath)) return false;
+
+	if (isUnderLoginPath(final.pathname, opts.loginPath)) return true;
+
+	// Off both the app's origin and the definition's → external SSO (Okta,
+	// Google, …), whose paths we can't know in advance.
+	return final.origin !== base.origin && final.origin !== def.origin;
+};
 
 // login / edit share one viewport + DPR so annotations don't drift.
 export const defaultContextOptions = (
