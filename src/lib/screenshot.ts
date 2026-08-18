@@ -56,14 +56,11 @@ export const effectiveRenderParams = (
 	};
 };
 
-// scrollY is stored in base-viewport CSS px; the render viewport is base/zoom,
-// so the target is divided by zoom to land on the same content (same rule as
-// cropClip). Shared by the definition-level scrollY and the `scroll` action.
+// The render viewport is base/zoom, so ÷zoom lands on the same content (as cropClip).
 export const scrollTargetY = (scrollY: number, zoom: number): number =>
 	scrollY / zoom;
 
-// Live values the editor drives while the definition on disk is still stale.
-// Capture passes none and reads everything from the definition.
+// Live editor values that win over the definition on disk (capture passes none).
 export interface RenderOverrides {
 	zoom?: number;
 	scrollY?: number;
@@ -150,10 +147,8 @@ export const captureScreenshots = async (
 };
 
 // Open a page, navigate to `def`, and prepare it for a screenshot: viewport,
-// hidden elements, replayed `steps` (re-running the recorded beforeCapture to
-// reproduce the page state), and the saved scroll position. Shared by capture
-// and the editor snapshot render so both land on the identical page state.
-// Exported for tests (the scroll-after-steps ordering and the ÷zoom rule).
+// hidden elements, replayed `steps` (re-running the recorded beforeCapture), and
+// the saved scroll position. Shared by capture and the editor snapshot render.
 export const openPreparedPage = async (
 	context: BrowserContext,
 	config: KagemushaConfig,
@@ -174,16 +169,14 @@ export const openPreparedPage = async (
 	if (steps?.length) {
 		await executeActions(page, steps, { ...replayOpts, zoom });
 	}
-	// After the steps: beforeCapture may scroll on its own, and the saved
-	// position is where the user left the page once everything had run.
+	// After the steps: beforeCapture may scroll, and the saved position is post-replay.
 	const scrollY = overrides.scrollY ?? def.scrollY ?? 0;
 	if (scrollY > 0) {
 		await page.evaluate(
 			(y) => window.scrollTo(0, y),
 			scrollTargetY(scrollY, zoom),
 		);
-		// Content below the fold is often lazy-loaded — give it the same settle
-		// window the initial load gets.
+		// Content below the fold is often lazy-loaded — let it settle.
 		await waitForPageReady(page);
 	}
 	return page;
@@ -221,7 +214,6 @@ export const cropClip = (
 	height: (crop.end.y - crop.start.y) / zoom,
 });
 
-// Exported for tests (crop must stay document-relative — see the crop branch).
 export const takeScreenshotBuffer = async (
 	page: Page,
 	def: ScreenshotDefinition,
@@ -231,9 +223,7 @@ export const takeScreenshotBuffer = async (
 		case "fullPage":
 			return await page.screenshot({ fullPage: true });
 
-		// fullPage makes Playwright treat `clip` as document-relative instead of
-		// viewport-relative, so a crop below the fold lands on the right content
-		// no matter where scrollY left the viewport.
+		// fullPage makes Playwright read `clip` as document-relative, not viewport-relative.
 		case "crop":
 			return await page.screenshot({
 				fullPage: true,
@@ -256,7 +246,6 @@ const isPresent = async (page: Page, selector: string): Promise<boolean> =>
 
 // `soft` skips a failing step instead of aborting; `timeout` fails fast. Capture
 // passes neither (strict, default timeout). Visible-match preference always applies.
-// `zoom` is the render zoom, needed to convert `scroll` action coordinates.
 export interface ReplayOptions {
 	soft?: boolean;
 	timeout?: number;
@@ -315,7 +304,6 @@ const runAction = async (
 			await actOnFirstVisible(page, action.selector, timeout, "hover");
 			return;
 		case "scroll": {
-			// action.y is base-viewport CSS px, like def.scrollY and crop coords.
 			const y = scrollTargetY(action.y, opts.zoom ?? 1);
 			if (action.selector) {
 				await page

@@ -48,8 +48,8 @@ export interface ScreenshotDefinition {
 	viewport?: Viewport;
 	// 縮尺. 1 = 100% (default). Range (0, 2].
 	zoom?: number;
-	// Page scroll position at capture time, in base-viewport CSS px (the same
-	// basis as crop / decoration coords, so it's zoom-independent). Default 0.
+	// Capture-time scroll position in base-viewport CSS px — the same basis as
+	// crop / decoration coords, so it's zoom-independent. Default 0.
 	scrollY?: number;
 	beforeCapture?: CaptureAction[];
 	capture: CaptureSpec;

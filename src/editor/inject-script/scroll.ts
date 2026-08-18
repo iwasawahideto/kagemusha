@@ -1,19 +1,14 @@
-// Editor scroll position (= how far down the page the capture starts). The live
-// DOM is deliberately overflow:hidden (see index.ts), so a scroll position can
-// only be expressed over a snapshot — a wheel on the live page promotes the
-// session to snapshot mode and carries the gesture over.
+// Editor scroll position. The live DOM is deliberately overflow:hidden (see
+// index.ts), so a scroll position can only be expressed over a snapshot.
 
 import { requestSnapshotRender } from "./render.js";
 import { state } from "./state.js";
 
-// Scrolling is a continuous gesture; wait for it to settle before paying for a
-// Node round-trip render.
 const SCROLL_DEBOUNCE_MS = 500;
 
 const OWN_UI = "#kagemusha-toolbar, .kagemusha-steps-panel";
 
-// Suppresses the scroll event our own restoreScroll() causes, so a re-render
-// can't feed itself an endless loop of identical renders.
+// Suppresses the scroll event restoreScroll() itself causes, which would re-render forever.
 let restoring = false;
 
 const wheelPixels = (e: WheelEvent): number => {
@@ -35,16 +30,12 @@ const onWheel = (e: WheelEvent): void => {
 	requestSnapshotRender(SCROLL_DEBOUNCE_MS);
 };
 
-// Called once a fresh snapshot image has been sized, so swapping the image
-// doesn't throw the user back to the top. A shorter re-render (lazy-load can
-// change the full-page height) clamps the scroll — mirror that back into state
-// so what we save is what the page can actually do.
+// The browser may clamp to a shorter document, so mirror the result back into state.
 export const restoreScroll = (): void => {
 	if (window.scrollY === state.scrollY) return;
 	restoring = true;
 	window.scrollTo(0, state.scrollY);
-	// Scroll events are dispatched before animation frame callbacks, so by here
-	// our own event has already been swallowed.
+	// Scroll events fire before rAF callbacks, so ours has already been swallowed.
 	window.requestAnimationFrame(() => {
 		state.scrollY = window.scrollY;
 		restoring = false;

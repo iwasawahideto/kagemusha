@@ -1,6 +1,5 @@
-// Debounced "re-render the snapshot" request. Shared by zoom and scroll, which
-// both change how the headless render must be set up — one channel so a zoom
-// render can't drop the current scroll position (or the other way round).
+// Debounced snapshot re-render. One channel for zoom / scroll / Record → Stop so
+// a render for one of them can never drop another's current value.
 
 import { serializeSteps } from "./record.js";
 import { exitSnapshotMode } from "./snapshot.js";
@@ -12,7 +11,6 @@ export const requestSnapshotRender = (delayMs: number): void => {
 	window.clearTimeout(debounceTimer);
 	debounceTimer = window.setTimeout(() => {
 		const steps = serializeSteps();
-		// Nothing left that needs a headless render → return to the live DOM.
 		if (state.zoom === 1 && state.scrollY === 0 && steps.length === 0) {
 			exitSnapshotMode();
 			return;

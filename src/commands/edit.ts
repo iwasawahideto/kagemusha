@@ -196,7 +196,6 @@ export const editCommand = async (options: EditOptions): Promise<void> => {
 						: undefined,
 				// Drop the default so unzoomed defs stay unchanged in json.
 				zoom: payload.zoom && payload.zoom !== 1 ? payload.zoom : undefined,
-				// Same: unscrolled defs keep no scrollY field at all.
 				scrollY: payload.scrollY ? payload.scrollY : undefined,
 			};
 		}
@@ -204,8 +203,6 @@ export const editCommand = async (options: EditOptions): Promise<void> => {
 		saveResolve();
 	});
 
-	// The single re-render channel: zoom, scroll and Record → Stop all land here
-	// with the full render params, so one of them can never drop another's value.
 	await page.exposeFunction(
 		"__kagemusha_render",
 		async (payloadJson: string) => {
@@ -282,8 +279,6 @@ export const editCommand = async (options: EditOptions): Promise<void> => {
 		{ z: initialZoom, y: initialScrollY },
 	);
 
-	// scrollY≠0 is only expressible over a snapshot (the live DOM can't scroll),
-	// so it forces the initial render just like zoom≠1 does.
 	if (def.beforeCapture?.length || initialZoom !== 1 || initialScrollY !== 0) {
 		try {
 			console.log(chalk.blue("📸 Rendering initial snapshot..."));

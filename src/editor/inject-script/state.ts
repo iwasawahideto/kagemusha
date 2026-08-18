@@ -63,9 +63,7 @@ interface EditorState {
 	// 縮尺. 1 = 100%. zoom≠1 always renders a snapshot to annotate on.
 	zoom: number;
 
-	// Page scroll position in base-viewport CSS px. Only expressible over a
-	// snapshot (the live DOM is overflow:hidden — see index.ts), so scrollY≠0
-	// always renders a snapshot too.
+	// スクロール位置. scrollY≠0 always renders a snapshot too (see scroll.ts).
 	scrollY: number;
 }
 

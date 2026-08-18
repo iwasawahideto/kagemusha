@@ -33,8 +33,7 @@ const isOwnUi = (el: EventTarget | null): boolean => {
 };
 
 let svgRef: SVGElement | null = null;
-// Injected by index.ts — record.ts must not import the render module, which
-// already imports serializeSteps from here.
+// Injected by index.ts: importing render.js here would be a circular import.
 let onStop: () => void = () => {};
 let panelEl: HTMLDivElement | null = null;
 let pickerOutlineEl: HTMLDivElement | null = null;
@@ -188,9 +187,7 @@ const setRecording = (on: boolean): void => {
 	}
 	updateToolbarLockState();
 	renderPanel();
-	// Stop with steps → render the snapshot (fire-and-forget; reply via
-	// enterSnapshotMode). Goes through the shared render channel so the current
-	// zoom / scroll survive the replay.
+	// Stop with steps → render the snapshot (fire-and-forget; reply via enterSnapshotMode).
 	if (!on && state.recordedSteps.length > 0) {
 		onStop();
 	}

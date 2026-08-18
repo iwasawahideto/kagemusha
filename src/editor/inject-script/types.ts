@@ -90,6 +90,5 @@ export interface EditorBridge {
 	__kagemusha_loadScroll: (scrollY: number) => void;
 	__kagemusha_enterSnapshotMode: (dataUrl: string) => void;
 	__kagemusha_snapshotLoading: (on: boolean) => void;
-	// Page → Node: re-render the snapshot with the current zoom / scroll / steps.
 	__kagemusha_render: (payloadJson: string) => Promise<void>;
 }

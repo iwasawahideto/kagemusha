@@ -120,8 +120,6 @@ describe("scrollTargetY", () => {
 	});
 
 	it("divides by zoom so the viewport lands on the same content", () => {
-		// At zoom 0.5 the viewport is 2x taller in CSS px, so the same content
-		// sits at half the scroll offset.
 		expect(scrollTargetY(800, 0.5)).toBe(1600);
 		expect(scrollTargetY(900, 1.5)).toBe(600);
 	});
@@ -167,8 +165,6 @@ describe("takeScreenshotBuffer", () => {
 				crop: { start: { x: 100, y: 1200 }, end: { x: 400, y: 1400 } },
 			}),
 		);
-		// Without fullPage, Playwright would read the clip as viewport-relative
-		// and a scrolled page would crop the wrong band.
 		expect(shots[0]).toEqual({
 			fullPage: true,
 			clip: { x: 100, y: 1200, width: 300, height: 200 },
