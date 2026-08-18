@@ -2,7 +2,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import chalk from "chalk";
-import { defaultContextOptions } from "../lib/auth.js";
+import {
+	defaultContextOptions,
+	hasAuthState,
+	isLoginRedirect,
+	resolveLoginPath,
+} from "../lib/auth.js";
 import {
 	findProjectRoot,
 	loadConfig,
@@ -26,6 +31,30 @@ const loadEditorScript = (): string => {
 	// Bundled by esbuild into a single IIFE — no ESM artifacts to strip.
 	const scriptPath = path.join(__dirname, "..", "editor", "inject-script.js");
 	return fs.readFileSync(scriptPath, "utf-8");
+};
+
+const printLoginRedirectError = (opts: {
+	finalUrl: string;
+	hasSession: boolean;
+}): void => {
+	console.error(
+		chalk.red(
+			opts.hasSession
+				? `\n✗ Saved session was rejected (likely expired) — the app redirected to its login page.`
+				: `\n✗ No saved session — the app redirected to its login page.`,
+		),
+	);
+	console.error(chalk.gray(`  Landed on: ${opts.finalUrl}`));
+	console.error(
+		chalk.yellow(
+			`\nHint:\n` +
+				(opts.hasSession
+					? `  - Run \`kagemusha login\` to refresh the session, then retry \`kagemusha edit\`\n`
+					: `  - Run \`kagemusha login\` first, then retry \`kagemusha edit\`\n`) +
+				`  - Logging in by hand inside this editor window does NOT save the session —\n` +
+				`    \`kagemusha login\` is the only command that writes .kagemusha/auth-state.json`,
+		),
+	);
 };
 
 export const editCommand = async (options: EditOptions): Promise<void> => {
@@ -116,6 +145,28 @@ export const editCommand = async (options: EditOptions): Promise<void> => {
 	// mid-edit would be infuriating.
 	await page.goto(fullUrl, { waitUntil: "load", timeout: 0 });
 	await waitForPageReady(page);
+
+	// `edit` never writes auth-state.json back, so a login form here is a dead end.
+	const finalUrl = page.url();
+	if (
+		isLoginRedirect({
+			finalUrl,
+			defUrl: fullUrl,
+			baseUrl: config.app.baseUrl,
+			loginPath: resolveLoginPath(projectRoot),
+		})
+	) {
+		printLoginRedirectError({
+			finalUrl,
+			hasSession: hasAuthState(projectRoot),
+		});
+		await browser.close().catch(() => {});
+		await Promise.race([
+			closeRenderer(),
+			new Promise<void>((resolve) => setTimeout(resolve, 3000)),
+		]);
+		process.exit(1);
+	}
 
 	if (def.hideElements?.length) {
 		for (const selector of def.hideElements) {

@@ -133,6 +133,20 @@ export const login = async (page) => {
 
 For SSO / MFA / OAuth where scripting is impossible: run `kagemusha login` locally to save `.kagemusha/auth-state.json`, then `base64 -i .kagemusha/auth-state.json | pbcopy` and store the result as a `KAGEMUSHA_STORAGE_STATE` GitHub Secret. The generated workflow shows the restore step (commented out).
 
+### `edit` and expired sessions
+
+`kagemusha edit` **reads** the saved session but never writes it back — **`kagemusha login` is the only command that saves a session**. Logging in by hand inside the editor window therefore accomplishes nothing: the session is thrown away when the window closes, and the next `edit` asks again.
+
+To make that failure obvious, `edit` checks where the page actually landed after navigating. If the app bounced it to the login page (or to an external IdP), `edit` prints the reason and exits `1` instead of dropping you on a login form:
+
+```
+✗ Saved session was rejected (likely expired) — the app redirected to its login page.
+```
+
+Run `kagemusha login` and retry. A definition that points at the login page itself is still editable — that case is not treated as a redirect.
+
+Known limitation: apps that render a login form **without changing the URL** (some SPAs) can't be detected this way, so `edit` opens normally there.
+
 ## Deploying to GitHub Actions
 
 `init` generates `.github/workflows/kagemusha.yml`. Required secrets:
