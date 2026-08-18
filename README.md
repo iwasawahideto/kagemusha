@@ -117,6 +117,13 @@ switches to the rendered snapshot you annotate on, and the position is saved per
 definition. Scroll back to the top with no zoom and no steps and the editor
 returns to the live page.
 
+Apps that scroll an inner container instead of the document (`body { overflow:
+hidden }` SPAs) have no document `scrollY` to save — use **Record** for those.
+Scrolling a container in the editor scrolls it natively (no snapshot switch), and
+while recording it becomes a `{ "action": "scroll", "selector": "…", "y": 800 }`
+step in `beforeCapture` that capture replays. Only where the scroll comes to rest
+is recorded, so scrolling back and forth leaves one step per container.
+
 ## Avoiding loading-state screenshots
 
 After `page.goto` kagemusha waits for `load` event + 3s of best-effort `networkidle` + 500ms hydration buffer. This handles most pages; SPAs with component-level skeletons may still capture mid-loading. Add a `beforeCapture` step per definition:
