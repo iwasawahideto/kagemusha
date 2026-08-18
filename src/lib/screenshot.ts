@@ -173,7 +173,7 @@ export const openPreparedPage = async (
 	const scrollY = overrides.scrollY ?? def.scrollY ?? 0;
 	if (scrollY > 0) {
 		await page.evaluate(
-			(y) => window.scrollTo(0, y),
+			(y) => window.scrollTo({ top: y, behavior: "instant" }),
 			scrollTargetY(scrollY, zoom),
 		);
 		// Content below the fold is often lazy-loaded — let it settle.
@@ -305,12 +305,17 @@ const runAction = async (
 			return;
 		case "scroll": {
 			const y = scrollTargetY(action.y, opts.zoom ?? 1);
+			// `behavior: instant` overrides CSS scroll-behavior: smooth, which would
+			// still be animating when the screenshot is taken.
 			if (action.selector) {
 				await page
 					.locator(action.selector)
-					.evaluate((el, v) => el.scrollTo(0, v), y);
+					.evaluate((el, v) => el.scrollTo({ top: v, behavior: "instant" }), y);
 			} else {
-				await page.evaluate((v) => window.scrollTo(0, v), y);
+				await page.evaluate(
+					(v) => window.scrollTo({ top: v, behavior: "instant" }),
+					y,
+				);
 			}
 			return;
 		}
