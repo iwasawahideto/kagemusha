@@ -23,9 +23,39 @@ const onScroll = (): void => {
 	requestSnapshotRender(SCROLL_DEBOUNCE_MS);
 };
 
+const SCROLLABLE_OVERFLOW = ["auto", "scroll", "overlay"];
+
+const EDITOR_LAYERS = `${OWN_UI}, #kagemusha-svg-layer, #kagemusha-snapshot, .kagemusha-prompt, .kagemusha-picker-outline`;
+
+// Apps that scroll an inner container instead of the document (body:overflow
+// hidden SPAs) must keep scrolling it — a snapshot render would fight that and
+// snap it back. The editor's own layers are skipped: the SVG overlay is on top
+// of every point, and it's the page underneath that scrolls.
+const scrollableUnderPointer = (x: number, y: number): Element | null => {
+	for (const el of document.elementsFromPoint(x, y)) {
+		if (el.closest(EDITOR_LAYERS)) continue;
+		const { overflowY } = window.getComputedStyle(el);
+		if (
+			SCROLLABLE_OVERFLOW.includes(overflowY) &&
+			el.scrollHeight > el.clientHeight
+		) {
+			return el;
+		}
+	}
+	return null;
+};
+
 const onWheel = (e: WheelEvent): void => {
 	if (state.snapshotMode || state.recording) return;
 	if (e.target instanceof Element && e.target.closest(OWN_UI)) return;
+	const container = scrollableUnderPointer(e.clientX, e.clientY);
+	if (container) {
+		// The overlay took the hit test, so the browser scrolls nothing by itself.
+		if (!container.contains(e.target as Node)) {
+			container.scrollTop += wheelPixels(e);
+		}
+		return;
+	}
 	state.scrollY = Math.max(0, state.scrollY + wheelPixels(e));
 	requestSnapshotRender(SCROLL_DEBOUNCE_MS);
 };
