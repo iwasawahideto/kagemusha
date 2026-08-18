@@ -39,13 +39,11 @@ describe("isLoginRedirect", () => {
 	});
 
 	it("a path that merely starts with the login path → false", () => {
-		// /login-help is a marketing page, not the login form.
 		expect(check(`${BASE}/login-help`)).toBe(false);
 	});
 
 	it("definition targeting the login page itself → false", () => {
 		expect(check(`${BASE}/login`, `${BASE}/login`)).toBe(false);
-		// Even after the app rewrites it (e.g. /login → /login/sso).
 		expect(check(`${BASE}/login/sso`, `${BASE}/login`)).toBe(false);
 	});
 
@@ -64,7 +62,6 @@ describe("isLoginRedirect", () => {
 		expect(
 			check(`${BASE}/auth/signin`, `${BASE}/dashboard`, "/auth/signin"),
 		).toBe(true);
-		// …and the default no longer matches.
 		expect(check(`${BASE}/login`, `${BASE}/dashboard`, "/auth/signin")).toBe(
 			false,
 		);
@@ -124,7 +121,6 @@ describe("resolveLoginPath", () => {
 		expect(resolveLoginPath(tmpDir)).toBe("/login");
 		writeMeta(JSON.stringify({ landingPath: "/home" }));
 		expect(resolveLoginPath(tmpDir)).toBe("/login");
-		// "/" would match every pathname and flag every page.
 		writeMeta(JSON.stringify({ loginPath: "/" }));
 		expect(resolveLoginPath(tmpDir)).toBe("/login");
 	});

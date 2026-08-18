@@ -146,9 +146,7 @@ export const editCommand = async (options: EditOptions): Promise<void> => {
 	await page.goto(fullUrl, { waitUntil: "load", timeout: 0 });
 	await waitForPageReady(page);
 
-	// `edit` reads auth-state.json but never writes it back, so a missing or
-	// expired session would otherwise just show a login form the user can't
-	// make stick. Bail out with instructions instead.
+	// `edit` never writes auth-state.json back, so a login form here is a dead end.
 	const finalUrl = page.url();
 	if (
 		isLoginRedirect({

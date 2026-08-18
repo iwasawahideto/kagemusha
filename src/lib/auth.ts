@@ -47,17 +47,14 @@ export const authContextOptions = (
 		? { storageState: getAuthStatePath(projectRoot) }
 		: {};
 
-// Normalizes a login path from auth-meta.json (user-typed, so "login" and
-// "/login/" both happen). Returns null for values that would match every
-// pathname (= "" / "/"), which would flag every page as a login redirect.
+// Returns null for "" / "/", which would match every pathname and flag every page.
 const normalizeLoginPath = (raw: string): string | null => {
 	const withSlash = raw.startsWith("/") ? raw : `/${raw}`;
 	const trimmed = withSlash.replace(/\/+$/, "");
 	return trimmed === "" ? null : trimmed;
 };
 
-// `kagemusha login` records the login path it used. Any read/parse failure
-// falls back to the conventional /login rather than disabling the check.
+// Any read/parse failure falls back to /login rather than disabling the check.
 export const resolveLoginPath = (projectRoot: string): string => {
 	try {
 		const meta = JSON.parse(
@@ -76,20 +73,12 @@ const isUnderLoginPath = (pathname: string, loginPath: string): boolean => {
 	return p === loginPath || p.startsWith(`${loginPath}/`);
 };
 
-/**
- * Did the app bounce us to its login page (or an external IdP)?
- *
- * `edit` only reads the saved storageState and never writes it back, so a
- * missing/expired session silently lands the user on a login form they can't
- * usefully fill in. Detecting that lets `edit` fail fast instead.
- *
- * Biased toward false: a false positive blocks a legitimate edit session,
- * while a false negative just restores today's behavior.
- */
+// Biased toward false: a false positive blocks a legitimate edit session, while
+// a false negative just restores today's behavior.
 export const isLoginRedirect = (opts: {
-	finalUrl: string; // page.url() after navigation settled
-	defUrl: string; // the definition's resolved URL
-	baseUrl: string; // config.app.baseUrl
+	finalUrl: string;
+	defUrl: string;
+	baseUrl: string;
 	loginPath: string;
 }): boolean => {
 	let final: URL;
@@ -108,8 +97,7 @@ export const isLoginRedirect = (opts: {
 
 	if (isUnderLoginPath(final.pathname, opts.loginPath)) return true;
 
-	// Off both the app's origin and the definition's → external SSO (Okta,
-	// Google, …), whose paths we can't know in advance.
+	// Off both origins → external SSO (Okta, Google, …), whose paths we can't know.
 	return final.origin !== base.origin && final.origin !== def.origin;
 };
 
