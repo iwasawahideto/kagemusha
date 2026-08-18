@@ -1,10 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { CaptureAction } from "../../types.js";
-import {
-	appendScrollStep,
-	dropTrailingScrollStep,
-	trailingScrollY,
-} from "./steps.js";
+import { appendScrollStep } from "./steps.js";
 
 const click = (selector: string): CaptureAction => ({
 	action: "click",
@@ -71,85 +67,5 @@ describe("appendScrollStep", () => {
 		];
 		appendScrollStep(original, { action: "scroll", selector: ".foo", y: 800 });
 		expect(original).toEqual([{ action: "scroll", selector: ".foo", y: 300 }]);
-	});
-});
-
-describe("trailingScrollY", () => {
-	it("is 0 for an empty list", () => {
-		expect(trailingScrollY([], ".foo")).toBe(0);
-	});
-
-	it("returns the trailing scroll of the same selector", () => {
-		expect(
-			trailingScrollY([{ action: "scroll", selector: ".foo", y: 300 }], ".foo"),
-		).toBe(300);
-	});
-
-	it("is 0 for a different selector", () => {
-		expect(
-			trailingScrollY([{ action: "scroll", selector: ".foo", y: 300 }], ".bar"),
-		).toBe(0);
-	});
-
-	it("is 0 when another step comes after the scroll", () => {
-		expect(
-			trailingScrollY(
-				[{ action: "scroll", selector: ".foo", y: 300 }, click("button")],
-				".foo",
-			),
-		).toBe(0);
-	});
-
-	it("matches the document scroll on an undefined selector", () => {
-		expect(trailingScrollY([{ action: "scroll", y: 300 }], undefined)).toBe(
-			300,
-		);
-	});
-
-	it("does not match an element scroll on an undefined selector", () => {
-		expect(
-			trailingScrollY(
-				[{ action: "scroll", selector: ".foo", y: 300 }],
-				undefined,
-			),
-		).toBe(0);
-	});
-});
-
-describe("dropTrailingScrollStep", () => {
-	it("drops the trailing scroll of the same selector", () => {
-		expect(
-			dropTrailingScrollStep(
-				[click("button"), { action: "scroll", selector: ".foo", y: 40 }],
-				".foo",
-			),
-		).toEqual([click("button")]);
-	});
-
-	it("keeps a trailing scroll of another selector", () => {
-		const steps: CaptureAction[] = [
-			{ action: "scroll", selector: ".foo", y: 40 },
-		];
-		expect(dropTrailingScrollStep(steps, ".bar")).toEqual(steps);
-	});
-
-	it("keeps everything when the last step isn't a scroll", () => {
-		const steps: CaptureAction[] = [
-			{ action: "scroll", selector: ".foo", y: 40 },
-			click("button"),
-		];
-		expect(dropTrailingScrollStep(steps, ".foo")).toEqual(steps);
-	});
-
-	it("is a no-op on an empty list", () => {
-		expect(dropTrailingScrollStep([], ".foo")).toEqual([]);
-	});
-
-	it("does not mutate the input list", () => {
-		const original: CaptureAction[] = [
-			{ action: "scroll", selector: ".foo", y: 40 },
-		];
-		dropTrailingScrollStep(original, ".foo");
-		expect(original).toHaveLength(1);
 	});
 });

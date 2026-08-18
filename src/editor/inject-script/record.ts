@@ -61,9 +61,7 @@ const ensurePanel = (): HTMLDivElement => {
 	return div;
 };
 
-// Exported: scroll.ts edits scroll steps outside record mode (no cycle — record
-// doesn't import scroll).
-export const renderPanel = (): void => {
+const renderPanel = (): void => {
 	const panel = ensurePanel();
 	updateToggleButton();
 	if (!panelOpen) {

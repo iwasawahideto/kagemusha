@@ -1,15 +1,8 @@
 // Editor scroll position. The live DOM is deliberately overflow:hidden (see
 // index.ts), so a scroll position can only be expressed over a snapshot.
 
-import { renderPanel } from "./record.js";
 import { requestSnapshotRender } from "./render.js";
-import { computeContainerSelector } from "./selector.js";
 import { state } from "./state.js";
-import {
-	appendScrollStep,
-	dropTrailingScrollStep,
-	trailingScrollY,
-} from "./steps.js";
 
 const SCROLL_DEBOUNCE_MS = 500;
 
@@ -96,41 +89,12 @@ const scrollableUnderPointer = (x: number, y: number): Element | null => {
 	return lastGeometricHit;
 };
 
-// A snapshot as tall as the viewport leaves nothing for the window to scroll.
-const documentScrolls = (): boolean =>
-	document.documentElement.scrollHeight > window.innerHeight;
-
-// Over a snapshot the container itself can't move (it lives in the live DOM
-// under a flat image), so the wheel edits the scroll step capture will replay.
-// No upper clamp: the live scrollHeight isn't the post-replay one, and the
-// replaying scrollTo clamps anyway.
-const editContainerScrollStep = (container: Element, deltaY: number): void => {
-	const { selector } = computeContainerSelector(container);
-	const y = Math.max(
-		0,
-		trailingScrollY(state.recordedSteps, selector) + deltaY,
-	);
-	state.recordedSteps =
-		y === 0
-			? dropTrailingScrollStep(state.recordedSteps, selector)
-			: appendScrollStep(state.recordedSteps, {
-					action: "scroll",
-					selector,
-					y,
-				});
-	renderPanel();
-	requestSnapshotRender(SCROLL_DEBOUNCE_MS);
-};
-
+// Over a snapshot the wheel only feeds the native window scroll (onScroll →
+// state.scrollY): recording a scroll is Record's job, so nothing here may touch
+// what capture replays.
 const onWheel = (e: WheelEvent): void => {
-	if (state.recording) return;
+	if (state.snapshotMode || state.recording) return;
 	if (e.target instanceof Element && e.target.closest(OWN_UI)) return;
-	if (state.snapshotMode) {
-		if (documentScrolls()) return;
-		const container = scrollableUnderPointer(e.clientX, e.clientY);
-		if (container) editContainerScrollStep(container, wheelPixels(e));
-		return;
-	}
 	const container = scrollableUnderPointer(e.clientX, e.clientY);
 	if (container) {
 		// The overlay took the hit test, so the browser scrolls nothing by itself.
