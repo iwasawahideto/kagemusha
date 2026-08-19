@@ -12,6 +12,7 @@ import { waitForPageReady } from "./page-ready.js";
 import { launchOptionsFor } from "./playwright-launch.js";
 
 type Page = import("playwright-core").Page;
+type Locator = import("playwright-core").Locator;
 type Browser = import("playwright-core").Browser;
 type BrowserContext = import("playwright-core").BrowserContext;
 
@@ -280,6 +281,41 @@ const actOnFirstVisible = async (
 	else await page.hover(selector, { timeout });
 };
 
+// Same tolerance as actOnFirstVisible, for scroll: a recorded container selector
+// can go ambiguous by capture time (a card grid re-renders), and a strict
+// locator would fail the whole capture. Prefer a match that can actually
+// scroll — the visible dups of a grid are all real, only one has the overflow.
+const scrollFirstVisible = async (
+	page: Page,
+	selector: string,
+	y: number,
+): Promise<void> => {
+	const loc = page.locator(selector);
+	const scrollTo = (target: Locator): Promise<void> =>
+		target.evaluate((el, v) => el.scrollTo({ top: v, behavior: "instant" }), y);
+	const count = await loc.count();
+	// Unique (or missing — then evaluate reports it) needs no disambiguation.
+	if (count <= 1) {
+		await scrollTo(loc);
+		return;
+	}
+	let firstVisible: Locator | null = null;
+	for (let i = 0; i < count; i++) {
+		const nth = loc.nth(i);
+		try {
+			if (!(await nth.isVisible())) continue;
+			if (await nth.evaluate((el) => el.scrollHeight > el.clientHeight)) {
+				await scrollTo(nth);
+				return;
+			}
+		} catch {
+			continue;
+		}
+		firstVisible ??= nth;
+	}
+	await scrollTo(firstVisible ?? loc.first());
+};
+
 const runAction = async (
 	page: Page,
 	action: CaptureAction,
@@ -308,9 +344,7 @@ const runAction = async (
 			// `behavior: instant` overrides CSS scroll-behavior: smooth, which would
 			// still be animating when the screenshot is taken.
 			if (action.selector) {
-				await page
-					.locator(action.selector)
-					.evaluate((el, v) => el.scrollTo({ top: v, behavior: "instant" }), y);
+				await scrollFirstVisible(page, action.selector, y);
 			} else {
 				await page.evaluate(
 					(v) => window.scrollTo({ top: v, behavior: "instant" }),

@@ -236,6 +236,7 @@ describe("resolveUrl", () => {
 interface FakePageConfig {
 	present?: (sel: string) => boolean; // page.$ returns non-null?
 	visible?: Record<string, boolean[]>; // locator(sel): visibility per nth match
+	scrollable?: Record<string, boolean[]>; // locator(sel): overflows per nth match
 	failLocatorClick?: Set<string>; // nth.click() throws for these selectors
 	failPageClick?: Set<string>; // page.click() throws for these selectors
 }
@@ -272,22 +273,30 @@ const makeFakePage = (cfg: FakePageConfig = {}) => {
 		},
 		locator: (sel: string) => {
 			const vis = cfg.visible?.[sel] ?? [true];
+			const scrollable = cfg.scrollable?.[sel] ?? vis.map(() => true);
+			const nth = (i: number) => ({
+				isVisible: async () => vis[i],
+				// No arg = the scrollHeight > clientHeight probe; with one = scrollTo.
+				evaluate: async (_fn: unknown, arg?: unknown) => {
+					if (arg === undefined) return scrollable[i];
+					calls.push(`loc.evaluate:${sel}#${i}:${String(arg)}`);
+				},
+				click: async (o?: { timeout?: number }) => {
+					calls.push(`loc.click:${sel}#${i}:${t(o)}`);
+					if (cfg.failLocatorClick?.has(sel))
+						throw new Error("loc.click failed");
+				},
+				hover: async (o?: { timeout?: number }) => {
+					calls.push(`loc.hover:${sel}#${i}:${t(o)}`);
+				},
+			});
 			return {
 				count: async () => vis.length,
 				evaluate: async (_fn: unknown, arg?: unknown) => {
 					calls.push(`loc.evaluate:${sel}:${String(arg)}`);
 				},
-				nth: (i: number) => ({
-					isVisible: async () => vis[i],
-					click: async (o?: { timeout?: number }) => {
-						calls.push(`loc.click:${sel}#${i}:${t(o)}`);
-						if (cfg.failLocatorClick?.has(sel))
-							throw new Error("loc.click failed");
-					},
-					hover: async (o?: { timeout?: number }) => {
-						calls.push(`loc.hover:${sel}#${i}:${t(o)}`);
-					},
-				}),
+				first: () => nth(0),
+				nth,
 			};
 		},
 		waitForTimeout: async () => {
@@ -368,6 +377,53 @@ describe("executeActions (soft replay)", () => {
 		const { page, calls } = makeFakePage();
 		await executeActions(page, [{ action: "scroll", y: 800 }], { zoom: 0.5 });
 		expect(calls).toEqual(["evaluate:1600"]);
+	});
+
+	it("scroll on an ambiguous selector: the visible match that can scroll", async () => {
+		const { page, calls } = makeFakePage({
+			visible: { ".ov-y_auto": [true, true, true] },
+			scrollable: { ".ov-y_auto": [false, true, false] },
+		});
+		await executeActions(page, [
+			{ action: "scroll", selector: ".ov-y_auto", y: 300 },
+		]);
+		expect(calls).toEqual(["loc.evaluate:.ov-y_auto#1:300"]);
+	});
+
+	it("scroll on an ambiguous selector: skips hidden matches", async () => {
+		const { page, calls } = makeFakePage({
+			visible: { ".pane": [false, true] },
+		});
+		await executeActions(
+			page,
+			[{ action: "scroll", selector: ".pane", y: 300 }],
+			{
+				zoom: 0.5,
+			},
+		);
+		// Still zoom-corrected on the tolerant path.
+		expect(calls).toEqual(["loc.evaluate:.pane#1:600"]);
+	});
+
+	it("scroll on an ambiguous selector: first visible when none overflows", async () => {
+		const { page, calls } = makeFakePage({
+			visible: { ".pane": [false, true, true] },
+			scrollable: { ".pane": [true, false, false] },
+		});
+		await executeActions(page, [
+			{ action: "scroll", selector: ".pane", y: 50 },
+		]);
+		expect(calls).toEqual(["loc.evaluate:.pane#1:50"]);
+	});
+
+	it("scroll on an ambiguous selector: first match when none is visible (no strict violation)", async () => {
+		const { page, calls } = makeFakePage({
+			visible: { ".pane": [false, false] },
+		});
+		await executeActions(page, [
+			{ action: "scroll", selector: ".pane", y: 50 },
+		]);
+		expect(calls).toEqual(["loc.evaluate:.pane#0:50"]);
 	});
 
 	it("scroll action on a selector is zoom-corrected too", async () => {
