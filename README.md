@@ -125,6 +125,15 @@ step in `beforeCapture` that capture replays. Only where the scroll comes to res
 is recorded, so scrolling back and forth leaves one step per container. Outside
 Record, scrolling only moves what you're looking at — never the saved definition.
 
+The selector for a container is verified against the page while recording: a grid
+of structurally identical cards needs an anchor, so kagemusha keeps walking up to
+enclosing `id`s until the selector matches exactly one element (e.g.
+`#GRID-ITEM-8c1d40be > div:nth-of-type(2) > div > div > div:nth-of-type(2)`).
+Nothing unique to anchor on is flagged with ⚠ in the steps panel — add a
+`data-testid` to the scrolling element and it becomes a one-segment selector. If
+the page changed shape by capture time and the selector matches several elements,
+capture scrolls the first visible one that can scroll rather than failing.
+
 ## Avoiding loading-state screenshots
 
 After `page.goto` kagemusha waits for `load` event + 3s of best-effort `networkidle` + 500ms hydration buffer. This handles most pages; SPAs with component-level skeletons may still capture mid-loading. Add a `beforeCapture` step per definition:
