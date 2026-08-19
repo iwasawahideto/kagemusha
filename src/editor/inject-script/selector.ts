@@ -54,6 +54,23 @@ const isInteractiveAncestor = (el: Element): Element | null => {
 	return null;
 };
 
+const isUsableId = (id: string): boolean => /^[a-zA-Z][\w-]*$/.test(id);
+
+// `force` writes nth-of-type even for an only child — needed when a duplicated
+// id upstream makes the implicit "only element of its tag" ambiguous.
+const typeSegment = (node: Element, force = false): string => {
+	const tag = node.tagName.toLowerCase();
+	const parent = node.parentElement;
+	if (!parent) return tag;
+	const siblings = Array.from(parent.children).filter(
+		(c) => c.tagName === node.tagName,
+	);
+	if (siblings.length > 1 || force) {
+		return `${tag}:nth-of-type(${siblings.indexOf(node) + 1})`;
+	}
+	return tag;
+};
+
 // Build a stable-ish CSS selector by walking up to the first ancestor with
 // a unique id/class, then using nth-child from there. We deliberately keep
 // the result short (max 4 segments) — long paths are signal that nothing
@@ -63,53 +80,81 @@ const cssPath = (el: Element): string => {
 	let cur: Element | null = el;
 	let depth = 0;
 	while (cur && depth < 4 && cur !== document.body) {
-		const node: Element = cur;
-		const tag = node.tagName;
-		let segment = tag.toLowerCase();
-		const id = node.id;
-		if (id && /^[a-zA-Z][\w-]*$/.test(id)) {
-			parts.unshift(`#${id}`);
+		if (isUsableId(cur.id)) {
+			parts.unshift(`#${cur.id}`);
 			break;
 		}
-		const parent = node.parentElement;
-		if (parent) {
-			const siblings = Array.from(parent.children).filter(
-				(c) => c.tagName === tag,
-			);
-			if (siblings.length > 1) {
-				const idx = siblings.indexOf(node) + 1;
-				segment += `:nth-of-type(${idx})`;
-			}
-		}
-		parts.unshift(segment);
-		cur = parent;
+		parts.unshift(typeSegment(cur));
+		cur = cur.parentElement;
 		depth++;
 	}
 	return parts.join(" > ");
 };
 
+const attributeSelectors = (el: Element): string[] => {
+	const out: string[] = [];
+	const testId = el.getAttribute("data-testid");
+	if (testId) out.push(`[data-testid="${escapeQuotes(testId)}"]`);
+	const ariaLabel = el.getAttribute("aria-label");
+	if (ariaLabel) out.push(`[aria-label="${escapeQuotes(ariaLabel)}"]`);
+	if (isUsableId(el.id)) out.push(`#${el.id}`);
+	return out;
+};
+
+// Paths for a scroll container, most-anchored first: one per id ancestor
+// (nearest = shortest), then the full path from the root, then the same path
+// with an explicit nth-of-type at every level. Unlike cssPath there is no depth
+// cut-off — a truncated path has no anchor at all, so it matches every card of
+// a grid instead of the one that was scrolled.
+const containerPaths = (el: Element): string[] => {
+	const anchored: string[] = [];
+	const parts: string[] = [];
+	const forced: string[] = [];
+	let cur: Element | null = el;
+	while (cur && cur !== document.body && cur !== document.documentElement) {
+		const id = isUsableId(cur.id) ? `#${cur.id}` : null;
+		parts.unshift(id ?? typeSegment(cur));
+		forced.unshift(typeSegment(cur, true));
+		if (id) anchored.push(parts.join(" > "));
+		cur = cur.parentElement;
+	}
+	const root = cur === document.body ? "body" : "html";
+	return [
+		...anchored,
+		[root, ...parts].join(" > "),
+		[root, ...forced].join(" > "),
+	];
+};
+
+// Checked against the live DOM at record time. The replay DOM can differ, which
+// is why capture still resolves an ambiguous match to the first visible one.
+const matchesOnlyOne = (selector: string): boolean => {
+	try {
+		return document.querySelectorAll(selector).length === 1;
+	} catch {
+		return false;
+	}
+};
+
+// Unchanged meaning: "fallback" = a bare structural path the steps panel should
+// flag with ⚠, which a unique-but-anchorless path still is.
+const pathQuality = (selector: string): SelectorResult["quality"] =>
+	/^[#[]/.test(selector) ? "good" : "fallback";
+
 // Scroll containers are identified structurally: computeSelector's text= and
 // interactive-ancestor rules would resolve to a child or wrapper that has the
 // text but not the overflow, and scrolling that does nothing.
+//
+// Uniqueness is verified here rather than trusted: card grids repeat the same
+// class/attribute structure, so the first candidate shape often matches every
+// card. Candidates are tried cheapest-and-most-stable first.
 export const computeContainerSelector = (el: Element): SelectorResult => {
-	const testId = el.getAttribute("data-testid");
-	if (testId) {
-		return {
-			selector: `[data-testid="${escapeQuotes(testId)}"]`,
-			quality: "good",
-		};
-	}
-	const ariaLabel = el.getAttribute("aria-label");
-	if (ariaLabel) {
-		return {
-			selector: `[aria-label="${escapeQuotes(ariaLabel)}"]`,
-			quality: "good",
-		};
-	}
-	const path = cssPath(el);
+	const candidates = [...attributeSelectors(el), ...containerPaths(el)];
+	const unique = candidates.find(matchesOnlyOne);
+	if (unique) return { selector: unique, quality: pathQuality(unique) };
 	return {
-		selector: path,
-		quality: path.startsWith("#") ? "good" : "fallback",
+		selector: candidates.at(-1) ?? cssPath(el),
+		quality: "fallback",
 	};
 };
 
