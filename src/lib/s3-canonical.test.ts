@@ -10,7 +10,12 @@ import {
 	S3ServiceException,
 } from "@aws-sdk/client-s3";
 import { mockClient } from "aws-sdk-client-mock";
-import { S3Canonical } from "./s3-canonical.js";
+import type { KagemushaConfig } from "../types.js";
+import {
+	createS3Canonical,
+	resolveS3Region,
+	S3Canonical,
+} from "./s3-canonical.js";
 
 // Class-level mock: S3Canonical news up its own S3Client internally.
 const s3Mock = mockClient(S3Client);
@@ -252,5 +257,70 @@ describe("S3Canonical.push", () => {
 
 		const urls = await canonical.push(ID, localPath);
 		expect(urls.previousHistory).toBeUndefined();
+	});
+});
+
+const S3_BASE = "https://test-bucket.s3.us-east-1.amazonaws.com";
+const CF_BASE = "https://d111111abcdef8.cloudfront.net";
+
+describe("resolveS3Region", () => {
+	it("config region wins over the region in cdnBaseUrl", () => {
+		expect(resolveS3Region("ap-northeast-1", S3_BASE)).toBe("ap-northeast-1");
+	});
+
+	it("falls back to the cdnBaseUrl region when config is unset", () => {
+		expect(resolveS3Region(undefined, S3_BASE)).toBe("us-east-1");
+	});
+
+	it("undefined when neither is available (CloudFront / custom domain)", () => {
+		expect(resolveS3Region(undefined, CF_BASE)).toBeUndefined();
+		expect(resolveS3Region(undefined, undefined)).toBeUndefined();
+	});
+
+	it("undefined for legacy global S3 URLs (no region segment)", () => {
+		expect(
+			resolveS3Region(undefined, "https://test-bucket.s3.amazonaws.com"),
+		).toBeUndefined();
+	});
+
+	it("blank config region falls through instead of yielding an empty region", () => {
+		expect(resolveS3Region("", S3_BASE)).toBe("us-east-1");
+		expect(resolveS3Region("   ", CF_BASE)).toBeUndefined();
+	});
+
+	it("trims a padded config region", () => {
+		expect(resolveS3Region(" ap-northeast-1 ")).toBe("ap-northeast-1");
+	});
+});
+
+// Reaches into the private `client` — the region arriving there is the point.
+const clientRegion = (c: S3Canonical): Promise<string> =>
+	(
+		c as unknown as { client: { config: { region: () => Promise<string> } } }
+	).client.config.region();
+
+describe("S3Canonical — region wiring", () => {
+	it("passes the config region to S3Client when cdnBaseUrl is a CloudFront domain", async () => {
+		const canonical = new S3Canonical(BUCKET, CF_BASE, "ap-northeast-1");
+		expect(await clientRegion(canonical)).toBe("ap-northeast-1");
+	});
+
+	it("uses the cdnBaseUrl region when no config region is given (regression)", async () => {
+		const canonical = new S3Canonical(BUCKET, S3_BASE);
+		expect(await clientRegion(canonical)).toBe("us-east-1");
+	});
+
+	it("createS3Canonical forwards publish.region from config", async () => {
+		const canonical = createS3Canonical({
+			publish: {
+				destination: "s3",
+				cdnBucket: BUCKET,
+				cdnBaseUrl: CF_BASE,
+				region: "ap-northeast-1",
+			},
+		} as KagemushaConfig);
+
+		expect(canonical).not.toBeNull();
+		expect(await clientRegion(canonical as S3Canonical)).toBe("ap-northeast-1");
 	});
 });

@@ -17,6 +17,7 @@ export interface KagemushaConfig {
 		outputDir?: string;
 		cdnBucket?: string;
 		cdnBaseUrl?: string;
+		region?: string;
 	};
 	routing?: Route[];
 	notification?: {

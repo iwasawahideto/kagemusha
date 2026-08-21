@@ -113,6 +113,13 @@ export function validateConfig(config: KagemushaConfig): string[] {
 	if (!config.screenshot?.defaultViewport) {
 		errors.push("screenshot.defaultViewport is required");
 	}
+	const region = config.publish?.region;
+	if (
+		region !== undefined &&
+		(typeof region !== "string" || region.trim() === "")
+	) {
+		errors.push("publish.region must be a non-empty string");
+	}
 
 	return errors;
 }
