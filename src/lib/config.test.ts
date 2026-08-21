@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import type { ScreenshotDefinition } from "../types.js";
-import { validateDefinition } from "./config.js";
+import type { KagemushaConfig, ScreenshotDefinition } from "../types.js";
+import { validateConfig, validateDefinition } from "./config.js";
 
 const mkDef = (
 	over: Partial<ScreenshotDefinition> = {},
@@ -40,6 +40,54 @@ describe("validateDefinition — scrollY", () => {
 	it("rejects non-numbers (hand-edited definitions.json)", () => {
 		expect(
 			scrollErrors(mkDef({ scrollY: "800" as unknown as number })),
+		).toHaveLength(1);
+	});
+});
+
+const mkConfig = (publish?: KagemushaConfig["publish"]): KagemushaConfig =>
+	({
+		app: { baseUrl: "https://app.example.com" },
+		screenshot: {
+			defaultViewport: { width: 1440, height: 900 },
+			defaultDiffThreshold: 0.005,
+		},
+		...(publish ? { publish } : {}),
+	}) as KagemushaConfig;
+
+const regionErrors = (config: KagemushaConfig): string[] =>
+	validateConfig(config).filter((e) => e.startsWith("publish.region"));
+
+describe("validateConfig — publish.region", () => {
+	it("absent is valid (falls back to cdnBaseUrl / SDK default)", () => {
+		expect(validateConfig(mkConfig())).toEqual([]);
+		expect(
+			validateConfig(mkConfig({ destination: "s3", cdnBucket: "test-bucket" })),
+		).toEqual([]);
+	});
+
+	it("a non-empty string is valid", () => {
+		expect(
+			regionErrors(mkConfig({ destination: "s3", region: "ap-northeast-1" })),
+		).toEqual([]);
+	});
+
+	it("rejects empty / whitespace-only regions", () => {
+		expect(
+			regionErrors(mkConfig({ destination: "s3", region: "" })),
+		).toHaveLength(1);
+		expect(
+			regionErrors(mkConfig({ destination: "s3", region: "   " })),
+		).toHaveLength(1);
+	});
+
+	it("rejects non-strings (hand-edited yaml)", () => {
+		expect(
+			regionErrors(
+				mkConfig({
+					destination: "s3",
+					region: 1 as unknown as string,
+				}),
+			),
 		).toHaveLength(1);
 	});
 });
