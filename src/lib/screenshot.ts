@@ -281,10 +281,8 @@ const actOnFirstVisible = async (
 	else await page.hover(selector, { timeout });
 };
 
-// Same tolerance as actOnFirstVisible, for scroll: a recorded container selector
-// can go ambiguous by capture time (a card grid re-renders), and a strict
-// locator would fail the whole capture. Prefer a match that can actually
-// scroll — the visible dups of a grid are all real, only one has the overflow.
+// A recorded container selector can go ambiguous by capture time, and a strict
+// locator would fail the whole capture — prefer a visible match that can scroll.
 const scrollFirstVisible = async (
 	page: Page,
 	selector: string,

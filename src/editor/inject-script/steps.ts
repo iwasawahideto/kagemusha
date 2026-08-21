@@ -4,8 +4,7 @@ import type { CaptureAction } from "./types.js";
 
 export type ScrollAction = Extract<CaptureAction, { action: "scroll" }>;
 
-// A back-and-forth scroll of one target is a single intent: only where it came
-// to rest matters. Any other step in between makes the order meaningful again.
+// Only where a back-and-forth scroll came to rest matters — unless a step intervenes.
 export const appendScrollStep = (
 	steps: CaptureAction[],
 	step: ScrollAction,

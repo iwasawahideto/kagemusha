@@ -39,10 +39,7 @@ const isScrollable = (el: Element): boolean => {
 const containsPoint = (rect: DOMRect, x: number, y: number): boolean =>
 	x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
 
-// Apps that scroll an inner container instead of the document (body:overflow
-// hidden SPAs) must keep scrolling it — a snapshot render would fight that and
-// snap it back. The editor's own layers are skipped: the SVG overlay is on top
-// of every point, and it's the page underneath that scrolls.
+// Editor layers cover every point, but it's the page underneath that scrolls.
 const hitTestScrollable = (x: number, y: number): Element | null => {
 	for (const el of document.elementsFromPoint(x, y)) {
 		if (el.closest(EDITOR_LAYERS)) continue;
@@ -51,9 +48,8 @@ const hitTestScrollable = (x: number, y: number): Element | null => {
 	return null;
 };
 
-// The hit test misses a container the live DOM made unhittable: a modal left
-// open behind the snapshot puts pointer-events:none on everything under it. So
-// fall back to geometry — the innermost scrollable box covering the point.
+// A modal left open in the live DOM puts pointer-events:none on everything under
+// it, hiding its own scroller from the hit test — fall back to geometry.
 const geometricScrollable = (x: number, y: number): Element | null => {
 	let best: Element | null = null;
 	let bestArea = Number.POSITIVE_INFINITY;
@@ -69,9 +65,7 @@ const geometricScrollable = (x: number, y: number): Element | null => {
 	return best;
 };
 
-// Scanning every element is too slow to repeat per wheel event, so the last
-// geometric hit is reused while the pointer stays inside it — revalidated
-// against the live rect, which moves as the page re-renders.
+// A full scan per wheel is too slow — reuse the last hit while the pointer is in its rect.
 let lastGeometricHit: Element | null = null;
 
 const scrollableUnderPointer = (x: number, y: number): Element | null => {
@@ -89,9 +83,7 @@ const scrollableUnderPointer = (x: number, y: number): Element | null => {
 	return lastGeometricHit;
 };
 
-// Over a snapshot the wheel only feeds the native window scroll (onScroll →
-// state.scrollY): recording a scroll is Record's job, so nothing here may touch
-// what capture replays.
+// Recording a scroll is Record's job — nothing here may touch what capture replays.
 const onWheel = (e: WheelEvent): void => {
 	if (state.snapshotMode || state.recording) return;
 	if (e.target instanceof Element && e.target.closest(OWN_UI)) return;

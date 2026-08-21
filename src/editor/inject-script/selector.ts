@@ -101,11 +101,8 @@ const attributeSelectors = (el: Element): string[] => {
 	return out;
 };
 
-// Paths for a scroll container, most-anchored first: one per id ancestor
-// (nearest = shortest), then the full path from the root, then the same path
-// with an explicit nth-of-type at every level. Unlike cssPath there is no depth
-// cut-off — a truncated path has no anchor at all, so it matches every card of
-// a grid instead of the one that was scrolled.
+// Most-anchored first. No depth cut-off unlike cssPath: a truncated path loses
+// its anchor and matches every card of a grid instead of the one scrolled.
 const containerPaths = (el: Element): string[] => {
 	const anchored: string[] = [];
 	const parts: string[] = [];
@@ -126,8 +123,7 @@ const containerPaths = (el: Element): string[] => {
 	];
 };
 
-// Checked against the live DOM at record time. The replay DOM can differ, which
-// is why capture still resolves an ambiguous match to the first visible one.
+// Live DOM at record time; replay differences are covered by capture's first-visible.
 const matchesOnlyOne = (selector: string): boolean => {
 	try {
 		return document.querySelectorAll(selector).length === 1;
@@ -136,18 +132,12 @@ const matchesOnlyOne = (selector: string): boolean => {
 	}
 };
 
-// Unchanged meaning: "fallback" = a bare structural path the steps panel should
-// flag with ⚠, which a unique-but-anchorless path still is.
+// A unique path is still "fallback" when anchorless — the steps panel flags it with ⚠.
 const pathQuality = (selector: string): SelectorResult["quality"] =>
 	/^[#[]/.test(selector) ? "good" : "fallback";
 
-// Scroll containers are identified structurally: computeSelector's text= and
-// interactive-ancestor rules would resolve to a child or wrapper that has the
-// text but not the overflow, and scrolling that does nothing.
-//
-// Uniqueness is verified here rather than trusted: card grids repeat the same
-// class/attribute structure, so the first candidate shape often matches every
-// card. Candidates are tried cheapest-and-most-stable first.
+// Structural, because text=/interactive-ancestor resolve to elements without the
+// overflow; uniqueness is verified since a grid's first candidate matches every card.
 export const computeContainerSelector = (el: Element): SelectorResult => {
 	const candidates = [...attributeSelectors(el), ...containerPaths(el)];
 	const unique = candidates.find(matchesOnlyOne);
