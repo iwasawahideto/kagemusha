@@ -113,8 +113,6 @@ export function validateConfig(config: KagemushaConfig): string[] {
 	if (!config.screenshot?.defaultViewport) {
 		errors.push("screenshot.defaultViewport is required");
 	}
-	// Typo guard: a blank region silently falls back to cdnBaseUrl extraction /
-	// the SDK default, which is the very failure publish.region exists to avoid.
 	const region = config.publish?.region;
 	if (
 		region !== undefined &&
