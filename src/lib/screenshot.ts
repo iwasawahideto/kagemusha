@@ -12,6 +12,7 @@ import { waitForPageReady } from "./page-ready.js";
 import { launchOptionsFor } from "./playwright-launch.js";
 
 type Page = import("playwright-core").Page;
+type Locator = import("playwright-core").Locator;
 type Browser = import("playwright-core").Browser;
 type BrowserContext = import("playwright-core").BrowserContext;
 
@@ -55,6 +56,16 @@ export const effectiveRenderParams = (
 		deviceScaleFactor: baseDpr * zoom,
 	};
 };
+
+// The render viewport is base/zoom, so ÷zoom lands on the same content (as cropClip).
+export const scrollTargetY = (scrollY: number, zoom: number): number =>
+	scrollY / zoom;
+
+// Live editor values that win over the definition on disk (capture passes none).
+export interface RenderOverrides {
+	zoom?: number;
+	scrollY?: number;
+}
 
 const contextOptionsForZoom = (
 	config: KagemushaConfig,
@@ -137,18 +148,18 @@ export const captureScreenshots = async (
 };
 
 // Open a page, navigate to `def`, and prepare it for a screenshot: viewport,
-// hidden elements, and replayed `steps` (re-running the recorded beforeCapture
-// to reproduce the page state). Shared by capture and the editor snapshot render.
-const openPreparedPage = async (
+// hidden elements, replayed `steps` (re-running the recorded beforeCapture), and
+// the saved scroll position. Shared by capture and the editor snapshot render.
+export const openPreparedPage = async (
 	context: BrowserContext,
 	config: KagemushaConfig,
 	def: ScreenshotDefinition,
 	steps: CaptureAction[] | undefined,
 	replayOpts: ReplayOptions = {},
-	zoomOverride?: number,
+	overrides: RenderOverrides = {},
 ): Promise<Page> => {
 	const page = await context.newPage();
-	const { viewport } = effectiveRenderParams(config, def, zoomOverride);
+	const { zoom, viewport } = effectiveRenderParams(config, def, overrides.zoom);
 	await page.setViewportSize(viewport);
 	const url = resolveUrl(config.app.baseUrl, def.url, def.urlParams);
 	await page.goto(url, { waitUntil: "load", timeout: 60000 });
@@ -157,7 +168,17 @@ const openPreparedPage = async (
 		await hideElements(page, def.hideElements);
 	}
 	if (steps?.length) {
-		await executeActions(page, steps, replayOpts);
+		await executeActions(page, steps, { ...replayOpts, zoom });
+	}
+	// After the steps: beforeCapture may scroll, and the saved position is post-replay.
+	const scrollY = overrides.scrollY ?? def.scrollY ?? 0;
+	if (scrollY > 0) {
+		await page.evaluate(
+			(y) => window.scrollTo({ top: y, behavior: "instant" }),
+			scrollTargetY(scrollY, zoom),
+		);
+		// Content below the fold is often lazy-loaded — let it settle.
+		await waitForPageReady(page);
 	}
 	return page;
 };
@@ -194,7 +215,7 @@ export const cropClip = (
 	height: (crop.end.y - crop.start.y) / zoom,
 });
 
-const takeScreenshotBuffer = async (
+export const takeScreenshotBuffer = async (
 	page: Page,
 	def: ScreenshotDefinition,
 	zoom = 1,
@@ -203,8 +224,12 @@ const takeScreenshotBuffer = async (
 		case "fullPage":
 			return await page.screenshot({ fullPage: true });
 
+		// fullPage makes Playwright read `clip` as document-relative, not viewport-relative.
 		case "crop":
-			return await page.screenshot({ clip: cropClip(def.capture.crop, zoom) });
+			return await page.screenshot({
+				fullPage: true,
+				clip: cropClip(def.capture.crop, zoom),
+			});
 
 		default:
 			console.warn(
@@ -225,6 +250,7 @@ const isPresent = async (page: Page, selector: string): Promise<boolean> =>
 export interface ReplayOptions {
 	soft?: boolean;
 	timeout?: number;
+	zoom?: number;
 }
 
 // Ambiguous `text=` selectors can match a hidden dup; act on the first VISIBLE
@@ -255,6 +281,39 @@ const actOnFirstVisible = async (
 	else await page.hover(selector, { timeout });
 };
 
+// A recorded container selector can go ambiguous by capture time, and a strict
+// locator would fail the whole capture — prefer a visible match that can scroll.
+const scrollFirstVisible = async (
+	page: Page,
+	selector: string,
+	y: number,
+): Promise<void> => {
+	const loc = page.locator(selector);
+	const scrollTo = (target: Locator): Promise<void> =>
+		target.evaluate((el, v) => el.scrollTo({ top: v, behavior: "instant" }), y);
+	const count = await loc.count();
+	// Unique (or missing — then evaluate reports it) needs no disambiguation.
+	if (count <= 1) {
+		await scrollTo(loc);
+		return;
+	}
+	let firstVisible: Locator | null = null;
+	for (let i = 0; i < count; i++) {
+		const nth = loc.nth(i);
+		try {
+			if (!(await nth.isVisible())) continue;
+			if (await nth.evaluate((el) => el.scrollHeight > el.clientHeight)) {
+				await scrollTo(nth);
+				return;
+			}
+		} catch {
+			continue;
+		}
+		firstVisible ??= nth;
+	}
+	await scrollTo(firstVisible ?? loc.first());
+};
+
 const runAction = async (
 	page: Page,
 	action: CaptureAction,
@@ -278,15 +337,20 @@ const runAction = async (
 			if (action.optional && !(await isPresent(page, action.selector))) return;
 			await actOnFirstVisible(page, action.selector, timeout, "hover");
 			return;
-		case "scroll":
+		case "scroll": {
+			const y = scrollTargetY(action.y, opts.zoom ?? 1);
+			// `behavior: instant` overrides CSS scroll-behavior: smooth, which would
+			// still be animating when the screenshot is taken.
 			if (action.selector) {
-				await page
-					.locator(action.selector)
-					.evaluate((el, y) => el.scrollTo(0, y), action.y);
+				await scrollFirstVisible(page, action.selector, y);
 			} else {
-				await page.evaluate((y) => window.scrollTo(0, y), action.y);
+				await page.evaluate(
+					(v) => window.scrollTo({ top: v, behavior: "instant" }),
+					y,
+				);
 			}
 			return;
+		}
 		case "wait":
 			await page.waitForTimeout(action.ms);
 			return;
@@ -348,10 +412,10 @@ const renderSnapshotBuffer = async (
 	projectRoot: string,
 	def: ScreenshotDefinition,
 	steps: CaptureAction[],
-	zoom: number,
+	overrides: RenderOverrides,
 ): Promise<Buffer> => {
 	const context = await browser.newContext(
-		contextOptionsForZoom(config, projectRoot, def, zoom),
+		contextOptionsForZoom(config, projectRoot, def, overrides.zoom),
 	);
 	try {
 		// Soft: skipping a failed item-select leaves the menu open to annotate.
@@ -361,7 +425,7 @@ const renderSnapshotBuffer = async (
 			def,
 			steps,
 			{ soft: true, timeout: 5000 },
-			zoom,
+			overrides,
 		);
 		return await page.screenshot({ fullPage: true });
 	} finally {
@@ -373,7 +437,7 @@ export interface SnapshotRenderer {
 	render: (
 		def: ScreenshotDefinition,
 		steps: CaptureAction[],
-		zoom?: number,
+		overrides?: RenderOverrides,
 	) => Promise<Buffer>;
 	close: () => Promise<void>;
 }
@@ -394,8 +458,8 @@ export const createSnapshotRenderer = async (
 		.then((p) => p.close())
 		.catch(() => {});
 	return {
-		render: (def, steps, zoom = 1) =>
-			renderSnapshotBuffer(browser, config, projectRoot, def, steps, zoom),
+		render: (def, steps, overrides = {}) =>
+			renderSnapshotBuffer(browser, config, projectRoot, def, steps, overrides),
 		close: () => browser.close(),
 	};
 };

@@ -10,7 +10,7 @@ The shadow warrior for your documentation.
 - **One verb (`capture`)** — capture → diff → push, all in one command
 - **S3-first** — `<id>/latest.png` is the canonical, embedded directly into help articles
 - **Component-level capture** — Playwright-powered, full-page / crop, pre-capture actions, element hiding
-- **Visual editor** — draw rectangles, arrows, labels; pick crop range by drag; set zoom / 縮尺 (`kagemusha edit`)
+- **Visual editor** — draw rectangles, arrows, labels; pick crop range by drag; set zoom / 縮尺 and scroll position (`kagemusha edit`)
 - **Login once** — store `storageState` locally, or run a scripted login on every CI run
 - **Slack-ready** — `reports/summary.json` ships immutable per-run URLs so notifications include image previews that don't break later
 
@@ -77,6 +77,7 @@ Definition (`.kagemusha/definitions.json`):
     "url": "/dashboard",
     "capture": { "mode": "fullPage" },
     "zoom": 0.9,
+    "scrollY": 1200,
     "hideElements": [".intercom-launcher"],
     "decorations": [
       { "type": "rect", "target": { "x": 32, "y": 120, "width": 310, "height": 120 } }
@@ -95,6 +96,43 @@ value is saved per definition. Decide the zoom before drawing annotations — ch
 it reflows the page, which shifts where existing annotations land. Prefer the
 editor's zoom steps (25%–200%); a hand-edited value between steps can shift the
 output by a pixel or two.
+
+`scrollY` (optional, default `0`) is where the page is scrolled to when the
+screenshot is taken, in **base viewport CSS px** — the same unit as crop and
+decoration coordinates, so it doesn't change when you change `zoom` (at capture
+time it's divided by `zoom`, exactly like the crop clip). It's applied *after*
+`beforeCapture` has replayed, so a recorded `scroll` step sets up the page and
+`scrollY` decides where it comes to rest.
+
+Annotation and crop coordinates are document coordinates and are unaffected by
+`scrollY`: a crop is always cut from the full page at the position you drew it.
+What `scrollY` does change is anything that depends on the viewport — lazy-loaded
+content below the fold gets a chance to load, and `position: sticky` / `fixed`
+elements render where they sit at that scroll position (in a `fullPage` capture
+they appear once, part-way down the image, instead of at the top).
+
+In the editor, just scroll: the live page is locked (kagemusha pins
+`overflow: hidden` so injected UI can't change the page height), so scrolling
+switches to the rendered snapshot you annotate on, and the position is saved per
+definition. Scroll back to the top with no zoom and no steps and the editor
+returns to the live page.
+
+Apps that scroll an inner container instead of the document (`body { overflow:
+hidden }` SPAs) have no document `scrollY` to save — use **Record** for those.
+Scrolling a container in the editor scrolls it natively (no snapshot switch), and
+while recording it becomes a `{ "action": "scroll", "selector": "…", "y": 800 }`
+step in `beforeCapture` that capture replays. Only where the scroll comes to rest
+is recorded, so scrolling back and forth leaves one step per container. Outside
+Record, scrolling only moves what you're looking at — never the saved definition.
+
+The selector for a container is verified against the page while recording: a grid
+of structurally identical cards needs an anchor, so kagemusha keeps walking up to
+enclosing `id`s until the selector matches exactly one element (e.g.
+`#GRID-ITEM-8c1d40be > div:nth-of-type(2) > div > div > div:nth-of-type(2)`).
+Nothing unique to anchor on is flagged with ⚠ in the steps panel — add a
+`data-testid` to the scrolling element and it becomes a one-segment selector. If
+the page changed shape by capture time and the selector matches several elements,
+capture scrolls the first visible one that can scroll rather than failing.
 
 ## Avoiding loading-state screenshots
 

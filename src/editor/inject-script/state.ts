@@ -62,6 +62,9 @@ interface EditorState {
 
 	// 縮尺. 1 = 100%. zoom≠1 always renders a snapshot to annotate on.
 	zoom: number;
+
+	// スクロール位置. scrollY≠0 always renders a snapshot too (see scroll.ts).
+	scrollY: number;
 }
 
 export const state: EditorState = {
@@ -78,6 +81,7 @@ export const state: EditorState = {
 	pickerKind: null,
 	snapshotMode: false,
 	zoom: 1,
+	scrollY: 0,
 };
 
 export const allocateAnnotationId = (): string => `a${state.nextId++}`;

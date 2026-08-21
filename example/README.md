@@ -30,3 +30,7 @@ bunx kagemusha capture
 - **Dashboard** (`index.html`) — Score cards, weekly trend chart
 - **Members** (`members.html`) — Member list table with search and invite
 - **Settings** (`settings.html`) — General settings, notifications, danger zone
+- **Card Grid** (`grid.html`) — Cards that each scroll their own list. Structurally
+  identical cards with `#GRID-ITEM-<uuid>` wrappers, so it reproduces the SPA shape
+  where a recorded container scroll needs a unique selector (see
+  `src/lib/container-scroll.harness.ts`)

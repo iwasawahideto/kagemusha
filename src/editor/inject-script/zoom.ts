@@ -1,27 +1,11 @@
 // Editor zoom (= 縮尺). We own the value and re-render a snapshot on change;
 // Chrome's native zoom can't be read because Playwright overrides viewport/DPR.
 
-import { serializeSteps } from "./record.js";
-import { exitSnapshotMode } from "./snapshot.js";
+import { requestSnapshotRender } from "./render.js";
 import { MAX_ZOOM, MIN_ZOOM, state, ZOOM_LEVELS } from "./state.js";
 
-let debounceTimer: number | undefined;
-
 // Debounced so a burst of +/- coalesces into one Node re-render.
-const requestRender = (): void => {
-	window.clearTimeout(debounceTimer);
-	debounceTimer = window.setTimeout(() => {
-		const steps = serializeSteps();
-		// zoom=1, no steps → nothing to render; return to the live DOM.
-		if (state.zoom === 1 && steps.length === 0) {
-			exitSnapshotMode();
-			return;
-		}
-		window
-			.__kagemusha_setZoom(JSON.stringify({ zoom: state.zoom, steps }))
-			.catch(() => {});
-	}, 300);
-};
+const ZOOM_DEBOUNCE_MS = 300;
 
 const updateReadout = (): void => {
 	const btn = document.getElementById("kg-zoom-level");
@@ -35,7 +19,7 @@ export const setZoom = (next: number): void => {
 	if (clamped === state.zoom) return;
 	state.zoom = clamped;
 	updateReadout();
-	requestRender();
+	requestSnapshotRender(ZOOM_DEBOUNCE_MS);
 };
 
 const step = (dir: 1 | -1): void => {

@@ -12,6 +12,8 @@ import * as annotations from "./annotations.js";
 import { initBridge } from "./bridge.js";
 import * as crop from "./crop.js";
 import { initRecord } from "./record.js";
+import { requestSnapshotRender } from "./render.js";
+import { initScroll } from "./scroll.js";
 import { initSvgLayer } from "./svg.js";
 import { initToolbar } from "./toolbar.js";
 import { handleZoomKey, initZoom } from "./zoom.js";
@@ -42,8 +44,9 @@ initToolbar(
 );
 
 crop.initCrop();
-initRecord(svg);
+initRecord(svg, () => requestSnapshotRender(0));
 initZoom();
+initScroll();
 ({ save: bridgeSave } = initBridge());
 
 // --- Mouse dispatcher ---

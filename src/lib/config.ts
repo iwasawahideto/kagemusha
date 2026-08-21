@@ -132,6 +132,14 @@ export function validateDefinition(def: ScreenshotDefinition): string[] {
 	) {
 		errors.push("zoom must be a number in (0, 2]");
 	}
+	if (
+		def.scrollY !== undefined &&
+		(typeof def.scrollY !== "number" ||
+			!Number.isFinite(def.scrollY) ||
+			def.scrollY < 0)
+	) {
+		errors.push("scrollY must be a finite number >= 0");
+	}
 
 	return errors;
 }
