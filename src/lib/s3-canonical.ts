@@ -43,6 +43,21 @@ const extractRegionFromCdnBase = (cdnBaseUrl?: string): string | undefined => {
 	return m?.[1];
 };
 
+/**
+ * Region for the S3 client: `publish.region` → the region embedded in a
+ * virtual-hosted S3 `cdnBaseUrl` → undefined (= SDK default resolution chain).
+ *
+ * Explicit config is needed once `cdnBaseUrl` becomes a custom domain
+ * (CloudFront etc.), since nothing is left to extract from.
+ */
+export const resolveS3Region = (
+	configRegion?: string,
+	cdnBaseUrl?: string,
+): string | undefined =>
+	// A blank `region:` in YAML parses to "" — fall through instead of handing
+	// the SDK an empty region that only fails at request time.
+	configRegion?.trim() || extractRegionFromCdnBase(cdnBaseUrl);
+
 /** S3-backed canonical store. */
 export class S3Canonical {
 	private readonly client: S3Client;
@@ -50,8 +65,9 @@ export class S3Canonical {
 	constructor(
 		private readonly bucket: string,
 		private readonly cdnBaseUrl?: string,
+		configRegion?: string,
 	) {
-		const region = extractRegionFromCdnBase(cdnBaseUrl);
+		const region = resolveS3Region(configRegion, cdnBaseUrl);
 		this.client = new S3Client(region ? { region } : {});
 	}
 
@@ -172,5 +188,5 @@ export const createS3Canonical = (
 	if (!publish.cdnBucket) {
 		throw new Error("publish.cdnBucket is required for s3 destination");
 	}
-	return new S3Canonical(publish.cdnBucket, publish.cdnBaseUrl);
+	return new S3Canonical(publish.cdnBucket, publish.cdnBaseUrl, publish.region);
 };
