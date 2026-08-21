@@ -66,6 +66,7 @@ publish:
   destination: s3               # or "local" for testing
   cdnBucket: your-bucket
   cdnBaseUrl: https://your-bucket.s3.ap-northeast-1.amazonaws.com
+  # region: ap-northeast-1      # required when cdnBaseUrl is a custom domain
 ```
 
 Definition (`.kagemusha/definitions.json`):
@@ -193,7 +194,7 @@ Known limitation: apps that render a login form **without changing the URL** (so
 - Login credentials (named whatever your `login.mjs` reads)
 - `SLACK_WEBHOOK_URL` — optional, see Notifications below
 
-Region is auto-detected from `publish.cdnBaseUrl` (`*.s3.<region>.amazonaws.com`), so no `AWS_REGION` env needed.
+Region is auto-detected from `publish.cdnBaseUrl` (`*.s3.<region>.amazonaws.com`), so no `AWS_REGION` env needed. If you serve the bucket through a custom domain (CloudFront etc.) there is no region to detect, so set `publish.region` explicitly — otherwise the push fails with `Region is missing`. Resolution order is `publish.region` → `cdnBaseUrl` → AWS SDK default.
 
 The workflow triggers on `push: main` and runs `kagemusha capture` automatically.
 
