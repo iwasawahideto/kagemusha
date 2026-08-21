@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.0](https://github.com/iwasawahideto/kagemusha/compare/v0.5.1...v0.6.0) (2026-08-21)
+
+
+### Features
+
+* **editor:** 編集時のページスクロール位置を撮影に反映する ([#48](https://github.com/iwasawahideto/kagemusha/issues/48)) ([7162b39](https://github.com/iwasawahideto/kagemusha/commit/7162b39993a30eaf3340417e15b3e52bc94a9b14))
+* **edit:** ログインページへのリダイレクトを検知して fail fast する ([#49](https://github.com/iwasawahideto/kagemusha/issues/49)) ([e71af94](https://github.com/iwasawahideto/kagemusha/commit/e71af9447a6941839bdccee15b3aa509a534d0b5))
+
 ## [0.5.1](https://github.com/iwasawahideto/kagemusha/compare/v0.5.0...v0.5.1) (2026-07-28)
 
 
