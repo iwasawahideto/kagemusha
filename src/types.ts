@@ -17,7 +17,6 @@ export interface KagemushaConfig {
 		outputDir?: string;
 		cdnBucket?: string;
 		cdnBaseUrl?: string;
-		// S3 region. Omitted: extracted from cdnBaseUrl, else SDK default.
 		region?: string;
 	};
 	routing?: Route[];

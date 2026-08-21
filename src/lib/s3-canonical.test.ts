@@ -293,8 +293,7 @@ describe("resolveS3Region", () => {
 	});
 });
 
-// `client` is `private`, but "does the resolved region actually reach the
-// S3Client" is the entire point of publish.region — cast once, locally.
+// Reaches into the private `client` — the region arriving there is the point.
 const clientRegion = (c: S3Canonical): Promise<string> =>
 	(
 		c as unknown as { client: { config: { region: () => Promise<string> } } }

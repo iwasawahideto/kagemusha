@@ -43,19 +43,12 @@ const extractRegionFromCdnBase = (cdnBaseUrl?: string): string | undefined => {
 	return m?.[1];
 };
 
-/**
- * Region for the S3 client: `publish.region` → the region embedded in a
- * virtual-hosted S3 `cdnBaseUrl` → undefined (= SDK default resolution chain).
- *
- * Explicit config is needed once `cdnBaseUrl` becomes a custom domain
- * (CloudFront etc.), since nothing is left to extract from.
- */
+// A custom-domain cdnBaseUrl (CloudFront etc.) has no region to extract, so
+// publish.region wins. A blank `region:` in YAML parses to "" — fall through.
 export const resolveS3Region = (
 	configRegion?: string,
 	cdnBaseUrl?: string,
 ): string | undefined =>
-	// A blank `region:` in YAML parses to "" — fall through instead of handing
-	// the SDK an empty region that only fails at request time.
 	configRegion?.trim() || extractRegionFromCdnBase(cdnBaseUrl);
 
 /** S3-backed canonical store. */
