@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/iwasawahideto/kagemusha/compare/v0.6.0...v0.6.1) (2026-08-21)
+
+
+### Bug Fixes
+
+* **config:** カスタムドメインの cdnBaseUrl で S3 リージョンが解決できない問題を publish.region で修正 ([#51](https://github.com/iwasawahideto/kagemusha/issues/51)) ([66717a9](https://github.com/iwasawahideto/kagemusha/commit/66717a9e5722758f6affc5e422117defb920e929))
+
 ## [0.6.0](https://github.com/iwasawahideto/kagemusha/compare/v0.5.1...v0.6.0) (2026-08-21)
 
 
