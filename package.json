@@ -53,7 +53,7 @@
     "chalk": "^5.4.0",
     "commander": "^13.0.0",
     "glob": "^11.0.0",
-    "inquirer": "^12.0.0",
+    "inquirer": "^14.3.0",
     "pixelmatch": "^7.0.0",
     "playwright-core": "^1.50.0",
     "pngjs": "^7.0.0",
