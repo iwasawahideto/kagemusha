@@ -1,0 +1,29 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    # 公開直後の悪意あるバージョンを避けるため、リリースから数日置いてから PR を作る
+    cooldown:
+      default-days: 3
+    commit-message:
+      # release-please に release として拾われないよう chore(deps): に固定
+      prefix: chore
+      include: scope
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 3
+    commit-message:
+      prefix: ci
+      include: scope
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
