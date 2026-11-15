@@ -18,7 +18,9 @@ export interface SelectorResult {
 	quality: "good" | "fallback";
 }
 
-const escapeQuotes = (s: string): string => s.replace(/"/g, '\\"');
+// Backslash first, otherwise a trailing `\` would escape our closing quote.
+const escapeQuotes = (s: string): string =>
+	s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 
 // Roughly mirrors Playwright's role inference for elements without an
 // explicit `role` attribute. Limited to the cases the editor cares about.
