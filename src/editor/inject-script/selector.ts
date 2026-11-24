@@ -18,7 +18,9 @@ export interface SelectorResult {
 	quality: "good" | "fallback";
 }
 
-const escapeQuotes = (s: string): string => s.replace(/"/g, '\\"');
+// Backslash first, otherwise a trailing `\` would escape our closing quote.
+const escapeQuotedString = (s: string): string =>
+	s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 
 // Roughly mirrors Playwright's role inference for elements without an
 // explicit `role` attribute. Limited to the cases the editor cares about.
@@ -94,9 +96,9 @@ const cssPath = (el: Element): string => {
 const attributeSelectors = (el: Element): string[] => {
 	const out: string[] = [];
 	const testId = el.getAttribute("data-testid");
-	if (testId) out.push(`[data-testid="${escapeQuotes(testId)}"]`);
+	if (testId) out.push(`[data-testid="${escapeQuotedString(testId)}"]`);
 	const ariaLabel = el.getAttribute("aria-label");
-	if (ariaLabel) out.push(`[aria-label="${escapeQuotes(ariaLabel)}"]`);
+	if (ariaLabel) out.push(`[aria-label="${escapeQuotedString(ariaLabel)}"]`);
 	if (isUsableId(el.id)) out.push(`#${el.id}`);
 	return out;
 };
@@ -156,7 +158,7 @@ export const computeSelector = (raw: Element): SelectorResult => {
 	const testId = el.getAttribute("data-testid");
 	if (testId) {
 		return {
-			selector: `[data-testid="${escapeQuotes(testId)}"]`,
+			selector: `[data-testid="${escapeQuotedString(testId)}"]`,
 			quality: "good",
 		};
 	}
@@ -164,7 +166,7 @@ export const computeSelector = (raw: Element): SelectorResult => {
 	const ariaLabel = el.getAttribute("aria-label");
 	if (ariaLabel) {
 		return {
-			selector: `[aria-label="${escapeQuotes(ariaLabel)}"]`,
+			selector: `[aria-label="${escapeQuotedString(ariaLabel)}"]`,
 			quality: "good",
 		};
 	}
@@ -174,11 +176,11 @@ export const computeSelector = (raw: Element): SelectorResult => {
 	if (role && text && text.length > 0 && text.length < 50) {
 		// Playwright recognizes `text="..."` as an exact-match selector,
 		// which is more reliable than role= for kagemusha's use case.
-		return { selector: `text="${escapeQuotes(text)}"`, quality: "good" };
+		return { selector: `text="${escapeQuotedString(text)}"`, quality: "good" };
 	}
 
 	if (text && text.length > 0 && text.length < 50 && !/\n/.test(text)) {
-		return { selector: `text="${escapeQuotes(text)}"`, quality: "good" };
+		return { selector: `text="${escapeQuotedString(text)}"`, quality: "good" };
 	}
 
 	return { selector: cssPath(el), quality: "fallback" };

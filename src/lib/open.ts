@@ -8,9 +8,9 @@ export const openInDefaultApp = (filePath: string): void => {
 	if (process.platform === "darwin") {
 		spawn("open", [filePath], { detached: true, stdio: "ignore" }).unref();
 	} else if (process.platform === "win32") {
-		// `start` is a cmd.exe builtin; we invoke cmd directly. The empty
-		// string after `start` is the (required) window title placeholder.
-		spawn("cmd", ["/c", "start", "", filePath], {
+		// Not `cmd /c start`: cmd.exe re-parses the path, so `&` etc. in it
+		// would run as commands. explorer.exe takes the path as a plain argument.
+		spawn("explorer.exe", [filePath], {
 			detached: true,
 			stdio: "ignore",
 		}).unref();

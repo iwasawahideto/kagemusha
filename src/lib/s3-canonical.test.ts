@@ -24,6 +24,13 @@ const BUCKET = "test-bucket";
 const CDN_BASE = "https://cdn.example.com";
 const ID = "home";
 
+const expectHistoryUrl = (url: string): void => {
+	const prefix = `${CDN_BASE}/${ID}/history/`;
+	expect(url.startsWith(prefix)).toBe(true);
+	expect(url.endsWith(".png")).toBe(true);
+	expect(url.length).toBeGreaterThan(prefix.length + ".png".length);
+};
+
 // PNG header bytes — body content doesn't matter, just needs to be readable.
 const PNG_HEADER = Buffer.from([
 	0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
@@ -125,9 +132,7 @@ describe("S3Canonical.push", () => {
 		const urls = await canonical.push(ID, localPath);
 
 		expect(urls.previousHistory).toBeUndefined();
-		expect(urls.history).toMatch(
-			new RegExp(`^${CDN_BASE}/${ID}/history/.+\\.png$`),
-		);
+		expectHistoryUrl(urls.history);
 		expect(s3Mock.commandCalls(PutObjectCommand)).toHaveLength(2);
 	});
 
@@ -151,9 +156,7 @@ describe("S3Canonical.push", () => {
 		const urls = await canonical.push(ID, localPath);
 
 		expect(urls.previousHistory).toBeUndefined();
-		expect(urls.history).toMatch(
-			new RegExp(`^${CDN_BASE}/${ID}/history/.+\\.png$`),
-		);
+		expectHistoryUrl(urls.history);
 	});
 
 	it("normal v2 push: previousHistory points to <base>/<id>/history/OLD-TS.png", async () => {
