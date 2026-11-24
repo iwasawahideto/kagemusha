@@ -54,7 +54,7 @@
     "commander": "^15.1.0",
     "glob": "^14.0.2",
     "inquirer": "^14.3.0",
-    "pixelmatch": "^7.0.0",
+    "pixelmatch": "^8.0.0",
     "playwright-core": "^1.50.0",
     "pngjs": "^7.0.0",
     "sharp": "^0.35.5",
