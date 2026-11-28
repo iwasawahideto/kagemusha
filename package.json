@@ -65,7 +65,7 @@
     "@types/bun": "latest",
     "@types/inquirer": "^10.0.0",
     "@types/node": "^26.6.6",
-    "@types/pixelmatch": "^5.2.6",
+    "@types/pixelmatch": "^7.1.0",
     "@types/pngjs": "^6.0.5",
     "@types/sharp": "^0.32.0",
     "aws-sdk-client-mock": "^4.1.0",
